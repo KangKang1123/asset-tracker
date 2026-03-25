@@ -181,6 +181,28 @@ def get_all_records():
     conn.close()
     return count
 
+def get_latest_record():
+    """获取最近一条记录及其条目"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, month, timestamp FROM records ORDER BY timestamp DESC LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    
+    if row:
+        record_id = row['id']
+        cursor.execute('''
+            SELECT category, name, amount FROM items WHERE record_id = ?
+        ''', (record_id,))
+        items = [dict(item) for item in cursor.fetchall()]
+        conn.close()
+        return items, row['month']
+    
+    conn.close()
+    return None, None
+
 # ==================== 计算函数 ====================
 def calculate_totals(items):
     """计算总资产、总负债、净资产"""
@@ -241,6 +263,26 @@ def main():
         
         # 按类别输入资产
         st.subheader("资产录入")
+        
+        # 导入上次记录按钮
+        col_import1, col_import2 = st.columns([1, 3])
+        with col_import1:
+            if st.button("📥 导入上次记录", use_container_width=True):
+                latest_items, latest_month = get_latest_record()
+                if latest_items:
+                    st.session_state.asset_items = latest_items.copy()
+                    st.success(f"✅ 已导入上次记录 ({latest_month})，可在基础上修改")
+                    st.rerun()
+                else:
+                    st.warning("暂无历史记录可导入")
+        
+        with col_import2:
+            if st.session_state.asset_items:
+                if st.button("🗑️ 清空所有条目", use_container_width=True):
+                    st.session_state.asset_items = []
+                    st.rerun()
+        
+        st.markdown("---")
         
         # 类别选择和添加
         col1, col2, col3 = st.columns([2, 2, 1])
