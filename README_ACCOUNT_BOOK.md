@@ -1,90 +1,67 @@
-# 月度记账应用安装说明
+# 资产管理平台
 
-## 依赖安装
+一个基于 Streamlit + Python 的个人资产管理应用，支持多种资产类型记录和统计分析。
 
-### 方法1: 使用 pip3（推荐）
+## 功能特色
+
+### 资产分类
+- 💵 **现金类**：银行存款、微信余额、支付宝余额、现金
+- 🏠 **固定资产**：房产、车位、商铺
+- 📈 **投资**：股票、基金、债券、理财产品
+- 💳 **负债类**：房贷、车贷、信用贷、信用卡欠款
+- 💎 **重要财产**：黄金、珠宝、名表、艺术品
+
+### 核心功能
+- 动态添加/删除资产条目
+- 实时计算总资产、总负债、净资产
+- JSON 文件本地持久化存储
+- 历史记录按年/月筛选查看
+- 按类别分组展示资产详情
+
+## 安装与运行
+
+### 1. 安装依赖
 
 ```bash
 pip3 install streamlit pandas
 ```
 
-### 方法2: 如果没有 pip，先安装 pip
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install python3-pip
-```
-
-**然后安装依赖:**
-```bash
-pip3 install streamlit pandas
-```
-
-### 方法3: 清华源镜像（国内用户推荐）
+### 2. 运行应用
 
 ```bash
-pip3 install streamlit pandas -i https://pypi.tuna.tsinghua.edu.cn/simple
+cd asset-tracker
+python3 -m streamlit run account_book.py --server.port 8501 --server.headless true
 ```
 
-## 运行应用
+### 3. 访问应用
 
-### 方式1: 直接运行
+浏览器访问：http://127.0.0.1:8501
 
-```bash
-python3 account_book.py
-```
+## 使用说明
 
-### 方式2: 使用快捷脚本
-
-```bash
-./run_account_book.sh
-```
-
-### 方式3: 指定端口运行
-
-```bash
-streamlit run account_book.py --server.port 5000
-```
-
-## 访问应用
-
-默认情况下，应用运行在 **http://127.0.0.1:8501**
-
-如果指定了端口5000，则访问 **http://127.0.0.1:5000**
-
-## 功能说明
-
-### 新增月度记录
-- 输入平台名称（银行卡、支付宝、微信、信用卡、网贷等）
-- 输入金额（正数=存款，负数=欠款）
-- 自动计算总存款、总欠款、净余额
-- 支持动态添加/删除平台
-- 保存后数据持久化存储
+### 新增资产记录
+1. 选择记录月份（默认当前月份）
+2. 选择资产类别
+3. 输入名称和金额
+4. 点击"添加条目"
+5. 确认无误后点击"保存记录"
 
 ### 查看历史记录
-- 按月份筛选查看
-- 表格形式展示各平台详情
-- 显示统计信息
+1. 选择年份
+2. 选择月份
+3. 点击"查看记录"按钮
+4. 展开各类别查看详情
 
 ## 数据存储
 
-数据保存在用户主目录的隐藏文件夹：
-```
-~/.account_book/records.json
-```
+数据保存在用户主目录：`~/.account_book/records.json`
 
-## 常见问题
+## 技术栈
 
-### Q: 缺少 pip 错误
-A: 先安装 pip3：`sudo apt install python3-pip`
-
-### Q: 端口被占用
-A: 更换端口：`streamlit run account_book.py --server.port 8502`
-
-### Q: 数据恢复
-A: 直接编辑 `~/.account_book/records.json` 文件
+- Python 3.x
+- Streamlit (Web UI)
+- Pandas (数据处理)
+- JSON (数据存储)
 
 ---
-**作者**: OpenClaw Assistant  
-**版本**: 1.0.0
+**GitHub**: https://github.com/KangKang1123/asset-tracker

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-月度存款/欠款记账应用 - 已完成版本
-支持多平台（银行卡、支付宝、微信、信用卡、网贷等）
+资产管理平台
+支持多种资产类型：现金类、固定资产、投资、负债、重要财产
 
 使用方法：
 1. 首次运行前，先安装依赖: pip3 install streamlit pandas
-2. 运行: python3 account_book.py
+2. 运行: streamlit run account_book.py
 3. 访问: http://127.0.0.1:8501
 """
 
@@ -16,6 +16,40 @@ import pandas as pd
 import json
 from datetime import datetime
 from pathlib import Path
+
+# ==================== 资产类型配置 ====================
+ASSET_CATEGORIES = {
+    "现金类": {
+        "icon": "💵",
+        "color": "green",
+        "examples": ["银行存款", "微信余额", "支付宝余额", "现金"],
+        "is_asset": True
+    },
+    "固定资产": {
+        "icon": "🏠",
+        "color": "blue",
+        "examples": ["房产", "车位", "商铺"],
+        "is_asset": True
+    },
+    "投资": {
+        "icon": "📈",
+        "color": "purple",
+        "examples": ["股票", "基金", "债券", "理财产品"],
+        "is_asset": True
+    },
+    "负债类": {
+        "icon": "💳",
+        "color": "red",
+        "examples": ["房贷", "车贷", "信用贷", "信用卡欠款"],
+        "is_asset": False  # 负债
+    },
+    "重要财产": {
+        "icon": "💎",
+        "color": "orange",
+        "examples": ["黄金", "珠宝", "名表", "艺术品"],
+        "is_asset": True
+    }
+}
 
 # ==================== 数据持久化 ====================
 DATA_DIR = Path.home() / ".account_book"
@@ -45,121 +79,158 @@ def save_records(records):
 def add_record(record):
     """添加新记录"""
     records = load_records()
-    records.insert(0, record)  # 新记录放在最前面
+    records.insert(0, record)
     save_records(records)
 
-# ==================== 工具函数 ====================
-def calculate_totals(platforms):
-    """计算总存款、总欠款、净余额"""
-    total_deposit = 0.0  # 总存款（正数）
-    total_debt = 0.0     # 总欠款（绝对值）
+# ==================== 计算函数 ====================
+def calculate_totals(items):
+    """计算总资产、总负债、净资产"""
+    total_assets = 0.0    # 总资产
+    total_liabilities = 0.0  # 总负债
     
-    for platform in platforms:
-        amount = platform.get('amount', 0)
-        if amount > 0:
-            total_deposit += amount
-        elif amount < 0:
-            total_debt += abs(amount)
+    for item in items:
+        category = item.get('category', '')
+        amount = item.get('amount', 0)
+        
+        if category in ASSET_CATEGORIES:
+            if ASSET_CATEGORIES[category]['is_asset']:
+                total_assets += amount
+            else:
+                # 负债类：金额为正数表示欠款
+                total_liabilities += amount
     
-    net_balance = sum(p.get('amount', 0) for p in platforms)
+    net_assets = total_assets - total_liabilities
     
     return {
-        'total_deposit': round(total_deposit, 2),
-        'total_debt': round(total_debt, 2),
-        'net_balance': round(net_balance, 2)
+        'total_assets': round(total_assets, 2),
+        'total_liabilities': round(total_liabilities, 2),
+        'net_assets': round(net_assets, 2)
     }
 
 # ==================== Streamlit 界面 ====================
 def main():
-    # 设置页面配置
     st.set_page_config(
-        page_title="月度记账 - 存款/欠款管理",
-        page_icon="💰",
+        page_title="资产管理平台",
+        page_icon="📊",
         layout="wide"
     )
     
-    # 标题
-    st.title("💰 月度存款/欠款记账本")
+    st.title("📊 个人资产管理平台")
     st.markdown("---")
     
-    # 创建两个主模块
-    tab1, tab2 = st.tabs(["📝 新增月度记录", "📊 查看历史记录"])
+    tab1, tab2 = st.tabs(["📝 新增资产记录", "📅 查看历史记录"])
     
+    # ==================== 新增记录 ====================
     with tab1:
-        st.header("新增月度记录")
+        st.header("新增资产记录")
         
         # 选择月份
         col1, col2 = st.columns([1, 3])
         with col1:
             today = datetime.now()
             default_month = today.strftime("%Y-%m")
-            selected_month = st.text_input("月份", value=default_month, 
-                                         help="格式: YYYY-MM，如 2026-03")
+            selected_month = st.text_input("记录月份", value=default_month,
+                                          help="格式: YYYY-MM，如 2026-03")
         
         st.markdown("---")
         
-        # 动态平台输入
-        st.subheader("平台输入")
+        # 初始化 session state
+        if 'asset_items' not in st.session_state:
+            st.session_state.asset_items = []
         
-        # 初始化平台列表
-        if 'platforms' not in st.session_state:
-            st.session_state.platforms = [{'name': '', 'amount': 0.0}]
+        # 按类别输入资产
+        st.subheader("资产录入")
         
-        # 添加平台按钮
-        if st.button("➕ 添加平台"):
-            st.session_state.platforms.append({'name': '', 'amount': 0.0})
+        # 类别选择和添加
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            selected_category = st.selectbox(
+                "选择资产类别",
+                options=list(ASSET_CATEGORIES.keys()),
+                key="category_select"
+            )
         
-        # 每个平台的输入
-        platforms = []
-        for i, platform in enumerate(st.session_state.platforms):
-            col1, col2, col3 = st.columns([3, 2, 1])
-            
-            with col1:
-                name = st.text_input(
-                    f"平台名称 {i+1}", 
-                    value=platform['name'], 
-                    key=f"platform_name_{i}",
-                    placeholder="如: 工商银行、支付宝、微信等"
-                )
-            
-            with col2:
-                amount = st.number_input(
-                    f"金额 (正数=存款, 负数=欠款) {i+1}",
-                    value=platform['amount'],
-                    key=f"platform_amount_{i}",
-                    format="%.2f",
-                    help="存款请输入正数，欠款请输入负数"
-                )
-            
-            with col3:
-                if i > 0:  # 至少保留一个平台
-                    if st.button("➖", key=f"remove_{i}"):
-                        st.session_state.platforms.pop(i)
-                        st.rerun()
-            
-            if name:  # 只保存有名称的平台
-                platforms.append({'name': name, 'amount': amount})
+        with col2:
+            category_info = ASSET_CATEGORIES[selected_category]
+            example_text = f"示例: {', '.join(category_info['examples'][:3])}"
+            item_name = st.text_input(
+                "名称",
+                placeholder=example_text,
+                key="item_name_input"
+            )
+        
+        with col3:
+            item_amount = st.number_input(
+                "金额 (元)",
+                value=0.0,
+                format="%.2f",
+                key="item_amount_input"
+            )
+        
+        if st.button("➕ 添加条目", use_container_width=True):
+            if item_name:
+                st.session_state.asset_items.append({
+                    'category': selected_category,
+                    'name': item_name,
+                    'amount': item_amount
+                })
+                st.rerun()
+            else:
+                st.warning("请输入名称")
         
         st.markdown("---")
         
-        # 显示计算结果
-        if platforms:
-            totals = calculate_totals(platforms)
+        # 显示已添加的条目
+        if st.session_state.asset_items:
+            st.subheader("已录入条目")
             
-            st.markdown("### 📊 计算结果")
+            # 按类别分组显示
+            items_by_category = {}
+            for item in st.session_state.asset_items:
+                cat = item['category']
+                if cat not in items_by_category:
+                    items_by_category[cat] = []
+                items_by_category[cat].append(item)
+            
+            # 显示每个类别的条目
+            for category, items in items_by_category.items():
+                cat_info = ASSET_CATEGORIES[category]
+                with st.expander(f"{cat_info['icon']} {category} ({len(items)}项)", expanded=True):
+                    for i, item in enumerate(items):
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        with col1:
+                            st.write(f"**{item['name']}**")
+                        with col2:
+                            if category == "负债类":
+                                st.write(f"💸 ¥{item['amount']:,.2f}")
+                            else:
+                                st.write(f"💰 ¥{item['amount']:,.2f}")
+                        with col3:
+                            # 找到该条目在总列表中的索引
+                            idx = st.session_state.asset_items.index(item)
+                            if st.button("🗑️", key=f"del_{idx}"):
+                                st.session_state.asset_items.pop(idx)
+                                st.rerun()
+            
+            st.markdown("---")
+            
+            # 计算结果
+            totals = calculate_totals(st.session_state.asset_items)
+            
+            st.subheader("📊 资产统计")
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.success(f"💰 **总存款**\n\n¥{totals['total_deposit']:,.2f}")
+                st.metric("💰 总资产", f"¥{totals['total_assets']:,.2f}")
             
             with col2:
-                st.error(f"💳 **总欠款**\n\n¥{totals['total_debt']:,.2f}")
+                st.metric("💳 总负债", f"¥{totals['total_liabilities']:,.2f}")
             
             with col3:
-                if totals['net_balance'] >= 0:
-                    st.success(f"💰 **净余额**\n\n¥{totals['net_balance']:,.2f}")
+                if totals['net_assets'] >= 0:
+                    st.metric("💎 净资产", f"¥{totals['net_assets']:,.2f}")
                 else:
-                    st.error(f"💸 **净负债**\n\n¥{totals['net_balance']:,.2f}")
+                    st.metric("⚠️ 净资产", f"¥{totals['net_assets']:,.2f}")
             
             st.markdown("---")
             
@@ -168,77 +239,102 @@ def main():
                 record = {
                     'month': selected_month,
                     'timestamp': datetime.now().isoformat(),
-                    'platforms': platforms,
+                    'items': st.session_state.asset_items,
                     'totals': totals
                 }
                 add_record(record)
                 st.success("✅ 记录保存成功！")
                 st.balloons()
-                # 清空平台输入
-                st.session_state.platforms = [{'name': '', 'amount': 0.0}]
+                st.session_state.asset_items = []
         else:
-            st.info("💡 请至少添加一个平台开始记录")
+            st.info("💡 请添加资产条目开始记录")
     
+    # ==================== 查看历史记录 ====================
     with tab2:
-        st.header("查看历史记录")
+        st.header("📅 查看历史记录")
         
-        # 加载所有记录
         records = load_records()
         
         if not records:
-            st.info("📝 暂无历史记录，请先在「新增月度记录」中添加")
+            st.info("📝 暂无历史记录，请先在「新增资产记录」中添加")
         else:
-            # 获取所有月份
+            # 获取所有年份和月份
             all_months = sorted(set(r['month'] for r in records), reverse=True)
             
-            # 月份筛选
-            selected_month = st.selectbox("选择月份", options=all_months)
+            # 年份选择
+            all_years = sorted(set(m.split('-')[0] for m in all_months), reverse=True)
             
-            # 过滤记录
-            filtered_records = [r for r in records if r['month'] == selected_month]
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_year = st.selectbox("选择年份", options=all_years, key="year_select")
             
-            if filtered_records:
-                for i, record in enumerate(filtered_records):
-                    st.subheader(f"记录 {i+1} - {record['month']}")
-                    
-                    # 显示平台详情
-                    st.write("##### 🏦 平台详情")
-                    df_data = []
-                    for p in record['platforms']:
-                        amount = p['amount']
-                        if amount >= 0:
-                            amount_str = f"💰 ¥{amount:,.2f}"
-                        else:
-                            amount_str = f"💸 ¥{amount:,.2f}"
-                        df_data.append({
-                            '平台': p['name'],
-                            '类型': '存款' if amount >= 0 else '欠款',
-                            '金额': amount_str
-                        })
-                    
-                    df = pd.DataFrame(df_data)
-                    st.dataframe(df, hide_index=True, use_container_width=True)
-                    
-                    # 显示统计
-                    totals = record['totals']
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.success(f"💰 总存款: ¥{totals['total_deposit']:,.2f}")
-                    
-                    with col2:
-                        st.error(f"💳 总欠款: ¥{totals['total_debt']:,.2f}")
-                    
-                    with col3:
-                        if totals['net_balance'] >= 0:
-                            st.success(f"💰 净余额: ¥{totals['net_balance']:,.2f}")
-                        else:
-                            st.error(f"💸 净负债: ¥{totals['net_balance']:,.2f}")
-                    
-                    st.markdown(f"*保存时间: {record['timestamp']}*")
-                    st.markdown("---")
-            else:
-                st.info(f"📅 月份 {selected_month} 暂无记录")
+            with col2:
+                # 过滤该年份的月份
+                year_months = [m for m in all_months if m.startswith(selected_year)]
+                selected_month = st.selectbox("选择月份", options=year_months, key="month_select")
+            
+            st.markdown("---")
+            
+            # 查看按钮
+            if st.button("🔍 查看记录", type="primary"):
+                st.session_state.show_records = True
+            
+            # 显示记录详情
+            if st.session_state.get('show_records', False):
+                filtered_records = [r for r in records if r['month'] == selected_month]
+                
+                if filtered_records:
+                    for i, record in enumerate(filtered_records):
+                        # 记录标题
+                        st.subheader(f"📋 {record['month']} 资产记录")
+                        st.caption(f"记录时间: {record['timestamp']}")
+                        
+                        # 按类别分组显示
+                        items_by_category = {}
+                        for item in record['items']:
+                            cat = item['category']
+                            if cat not in items_by_category:
+                                items_by_category[cat] = []
+                            items_by_category[cat].append(item)
+                        
+                        # 显示各类别详情
+                        for category, items in items_by_category.items():
+                            cat_info = ASSET_CATEGORIES[category]
+                            cat_total = sum(item['amount'] for item in items)
+                            
+                            with st.expander(
+                                f"{cat_info['icon']} {category} - ¥{cat_total:,.2f} ({len(items)}项)",
+                                expanded=True
+                            ):
+                                df_data = []
+                                for item in items:
+                                    df_data.append({
+                                        '名称': item['name'],
+                                        '金额': f"¥{item['amount']:,.2f}"
+                                    })
+                                df = pd.DataFrame(df_data)
+                                st.dataframe(df, hide_index=True, use_container_width=True)
+                        
+                        st.markdown("---")
+                        
+                        # 统计汇总
+                        totals = record['totals']
+                        st.subheader("📊 资产汇总")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.success(f"💰 **总资产**\n\n¥{totals['total_assets']:,.2f}")
+                        with col2:
+                            st.error(f"💳 **总负债**\n\n¥{totals['total_liabilities']:,.2f}")
+                        with col3:
+                            if totals['net_assets'] >= 0:
+                                st.success(f"💎 **净资产**\n\n¥{totals['net_assets']:,.2f}")
+                            else:
+                                st.error(f"⚠️ **净资产**\n\n¥{totals['net_assets']:,.2f}")
+                        
+                        st.markdown("---")
+                else:
+                    st.warning(f"📅 {selected_month} 暂无记录")
 
 # ==================== 主程序入口 ====================
 if __name__ == "__main__":
