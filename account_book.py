@@ -3,6 +3,7 @@
 """
 资产管理平台
 支持多种资产类型：现金类、固定资产、投资、负债、重要财产
+使用 SQLite 持久化存储
 
 使用方法：
 1. 首次运行前，先安装依赖: pip3 install streamlit pandas
@@ -13,6 +14,7 @@
 # ==================== 导入依赖 ====================
 import streamlit as st
 import pandas as pd
+import sqlite3
 import json
 from datetime import datetime
 from pathlib import Path
@@ -51,42 +53,139 @@ ASSET_CATEGORIES = {
     }
 }
 
-# ==================== 数据持久化 ====================
+# ==================== SQLite 数据库 ====================
 DATA_DIR = Path.home() / ".account_book"
-DATA_FILE = DATA_DIR / "records.json"
+DB_FILE = DATA_DIR / "assets.db"
 
 def ensure_data_dir():
     """确保数据目录存在"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-def load_records():
-    """加载历史记录"""
+def get_db_connection():
+    """获取数据库连接"""
     ensure_data_dir()
-    if DATA_FILE.exists():
-        try:
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return []
-    return []
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def save_records(records):
-    """保存历史记录"""
-    ensure_data_dir()
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(records, f, ensure_ascii=False, indent=2)
+def init_db():
+    """初始化数据库表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 创建记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            total_assets REAL DEFAULT 0,
+            total_liabilities REAL DEFAULT 0,
+            net_assets REAL DEFAULT 0
+        )
+    ''')
+    
+    # 创建资产条目表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
-def add_record(record):
-    """添加新记录"""
-    records = load_records()
-    records.insert(0, record)
-    save_records(records)
+def save_record(month, items):
+    """保存资产记录"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 计算汇总
+    totals = calculate_totals(items)
+    
+    # 插入记录
+    cursor.execute('''
+        INSERT INTO records (month, timestamp, total_assets, total_liabilities, net_assets)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (month, datetime.now().isoformat(), totals['total_assets'], 
+          totals['total_liabilities'], totals['net_assets']))
+    
+    record_id = cursor.lastrowid
+    
+    # 插入条目
+    for item in items:
+        cursor.execute('''
+            INSERT INTO items (record_id, category, name, amount)
+            VALUES (?, ?, ?, ?)
+        ''', (record_id, item['category'], item['name'], item['amount']))
+    
+    conn.commit()
+    conn.close()
+    
+    return totals
+
+def get_all_months():
+    """获取所有月份列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT month FROM records ORDER BY month DESC')
+    months = [row['month'] for row in cursor.fetchall()]
+    conn.close()
+    return months
+
+def get_records_by_month(month):
+    """获取指定月份的所有记录"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, month, timestamp, total_assets, total_liabilities, net_assets
+        FROM records WHERE month = ? ORDER BY timestamp DESC
+    ''', (month,))
+    
+    records = []
+    for row in cursor.fetchall():
+        record = dict(row)
+        
+        # 获取该记录的所有条目
+        cursor.execute('''
+            SELECT category, name, amount FROM items WHERE record_id = ?
+        ''', (record['id'],))
+        
+        record['items'] = [dict(item) for item in cursor.fetchall()]
+        records.append(record)
+    
+    conn.close()
+    return records
+
+def delete_record(record_id):
+    """删除记录"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM items WHERE record_id = ?', (record_id,))
+    cursor.execute('DELETE FROM records WHERE id = ?', (record_id,))
+    conn.commit()
+    conn.close()
+
+def get_all_records():
+    """获取所有记录（用于统计）"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) as count FROM records')
+    count = cursor.fetchone()['count']
+    conn.close()
+    return count
 
 # ==================== 计算函数 ====================
 def calculate_totals(items):
     """计算总资产、总负债、净资产"""
-    total_assets = 0.0    # 总资产
-    total_liabilities = 0.0  # 总负债
+    total_assets = 0.0
+    total_liabilities = 0.0
     
     for item in items:
         category = item.get('category', '')
@@ -96,7 +195,6 @@ def calculate_totals(items):
             if ASSET_CATEGORIES[category]['is_asset']:
                 total_assets += amount
             else:
-                # 负债类：金额为正数表示欠款
                 total_liabilities += amount
     
     net_assets = total_assets - total_liabilities
@@ -109,6 +207,9 @@ def calculate_totals(items):
 
 # ==================== Streamlit 界面 ====================
 def main():
+    # 初始化数据库
+    init_db()
+    
     st.set_page_config(
         page_title="资产管理平台",
         page_icon="📊",
@@ -206,7 +307,6 @@ def main():
                             else:
                                 st.write(f"💰 ¥{item['amount']:,.2f}")
                         with col3:
-                            # 找到该条目在总列表中的索引
                             idx = st.session_state.asset_items.index(item)
                             if st.button("🗑️", key=f"del_{idx}"):
                                 st.session_state.asset_items.pop(idx)
@@ -236,13 +336,7 @@ def main():
             
             # 保存按钮
             if st.button("💾 保存记录", type="primary", use_container_width=True):
-                record = {
-                    'month': selected_month,
-                    'timestamp': datetime.now().isoformat(),
-                    'items': st.session_state.asset_items,
-                    'totals': totals
-                }
-                add_record(record)
+                save_record(selected_month, st.session_state.asset_items)
                 st.success("✅ 记录保存成功！")
                 st.balloons()
                 st.session_state.asset_items = []
@@ -253,14 +347,11 @@ def main():
     with tab2:
         st.header("📅 查看历史记录")
         
-        records = load_records()
+        all_months = get_all_months()
         
-        if not records:
+        if not all_months:
             st.info("📝 暂无历史记录，请先在「新增资产记录」中添加")
         else:
-            # 获取所有年份和月份
-            all_months = sorted(set(r['month'] for r in records), reverse=True)
-            
             # 年份选择
             all_years = sorted(set(m.split('-')[0] for m in all_months), reverse=True)
             
@@ -269,7 +360,6 @@ def main():
                 selected_year = st.selectbox("选择年份", options=all_years, key="year_select")
             
             with col2:
-                # 过滤该年份的月份
                 year_months = [m for m in all_months if m.startswith(selected_year)]
                 selected_month = st.selectbox("选择月份", options=year_months, key="month_select")
             
@@ -281,11 +371,10 @@ def main():
             
             # 显示记录详情
             if st.session_state.get('show_records', False):
-                filtered_records = [r for r in records if r['month'] == selected_month]
+                records = get_records_by_month(selected_month)
                 
-                if filtered_records:
-                    for i, record in enumerate(filtered_records):
-                        # 记录标题
+                if records:
+                    for record in records:
                         st.subheader(f"📋 {record['month']} 资产记录")
                         st.caption(f"记录时间: {record['timestamp']}")
                         
@@ -297,7 +386,6 @@ def main():
                                 items_by_category[cat] = []
                             items_by_category[cat].append(item)
                         
-                        # 显示各类别详情
                         for category, items in items_by_category.items():
                             cat_info = ASSET_CATEGORIES[category]
                             cat_total = sum(item['amount'] for item in items)
@@ -318,19 +406,16 @@ def main():
                         st.markdown("---")
                         
                         # 统计汇总
-                        totals = record['totals']
-                        st.subheader("📊 资产汇总")
-                        
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.success(f"💰 **总资产**\n\n¥{totals['total_assets']:,.2f}")
+                            st.success(f"💰 **总资产**\n\n¥{record['total_assets']:,.2f}")
                         with col2:
-                            st.error(f"💳 **总负债**\n\n¥{totals['total_liabilities']:,.2f}")
+                            st.error(f"💳 **总负债**\n\n¥{record['total_liabilities']:,.2f}")
                         with col3:
-                            if totals['net_assets'] >= 0:
-                                st.success(f"💎 **净资产**\n\n¥{totals['net_assets']:,.2f}")
+                            if record['net_assets'] >= 0:
+                                st.success(f"💎 **净资产**\n\n¥{record['net_assets']:,.2f}")
                             else:
-                                st.error(f"⚠️ **净资产**\n\n¥{totals['net_assets']:,.2f}")
+                                st.error(f"⚠️ **净资产**\n\n¥{record['net_assets']:,.2f}")
                         
                         st.markdown("---")
                 else:
