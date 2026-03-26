@@ -68,6 +68,31 @@ export interface HealthScoreResponse {
   }
 }
 
+export interface ExpenseItem {
+  id: number
+  date: string
+  category: string
+  name: string
+  amount: number
+  note: string
+  timestamp: string
+}
+
+export interface ExpenseSummary {
+  month: string
+  total: number
+  by_category: { category: string; total: number; count: number }[]
+  by_date: { date: string; total: number; count: number }[]
+  category_count: number
+  record_count: number
+}
+
+export interface ExpenseCategory {
+  value: string
+  label: string
+  color: string
+}
+
 const API_BASE = '/api'
 
 export const api = {
@@ -126,6 +151,58 @@ export const api = {
   // 获取健康度评分
   async getHealthScore(): Promise<HealthScoreResponse> {
     const res = await fetch(`${API_BASE}/health-score`)
+    return res.json()
+  },
+
+  // ========== 支出记录 ==========
+  // 获取支出分类
+  async getExpenseCategories(): Promise<{ categories: ExpenseCategory[] }> {
+    const res = await fetch(`${API_BASE}/expense-categories`)
+    return res.json()
+  },
+
+  // 创建支出记录
+  async createExpense(data: {
+    date: string
+    category: string
+    name: string
+    amount: number
+    note?: string
+  }): Promise<{ success: boolean; id: number }> {
+    const res = await fetch(`${API_BASE}/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return res.json()
+  },
+
+  // 获取支出记录列表
+  async getExpenses(month?: string, limit = 100): Promise<{ expenses: ExpenseItem[] }> {
+    const url = month
+      ? `${API_BASE}/expenses?month=${month}&limit=${limit}`
+      : `${API_BASE}/expenses?limit=${limit}`
+    const res = await fetch(url)
+    return res.json()
+  },
+
+  // 获取月度支出汇总
+  async getExpenseSummary(month: string): Promise<ExpenseSummary> {
+    const res = await fetch(`${API_BASE}/expenses/summary/${month}`)
+    return res.json()
+  },
+
+  // 获取有支出记录的月份列表
+  async getExpenseMonths(): Promise<{ months: string[] }> {
+    const res = await fetch(`${API_BASE}/expenses/months`)
+    return res.json()
+  },
+
+  // 删除支出记录
+  async deleteExpense(id: number): Promise<{ success: boolean }> {
+    const res = await fetch(`${API_BASE}/expenses/${id}`, {
+      method: 'DELETE',
+    })
     return res.json()
   },
 }

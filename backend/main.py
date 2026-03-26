@@ -71,6 +71,19 @@ def ensure_db():
         )
     ''')
     
+    # 支出记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT,
+            timestamp TEXT NOT NULL
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -579,6 +592,180 @@ def get_health_score():
             "investment_amount": investment_amount
         }
     }
+
+# ==================== 支出记录功能 ====================
+class ExpenseCreate(BaseModel):
+    """支出记录创建"""
+    date: str  # YYYY-MM-DD
+    category: str
+    name: str
+    amount: float
+    note: Optional[str] = ""
+
+class ExpenseResponse(BaseModel):
+    """支出记录响应"""
+    id: int
+    date: str
+    category: str
+    name: str
+    amount: float
+    note: str
+    timestamp: str
+
+# 支出分类配置
+EXPENSE_CATEGORIES = [
+    {"value": "餐饮", "label": "🍜 餐饮", "color": "orange"},
+    {"value": "交通", "label": "🚗 交通", "color": "blue"},
+    {"value": "服饰", "label": "👕 服饰", "color": "pink"},
+    {"value": "购物", "label": "🛒 购物", "color": "purple"},
+    {"value": "运动", "label": "🏃 运动", "color": "green"},
+    {"value": "娱乐", "label": "🎬 娱乐", "color": "magenta"},
+    {"value": "学习", "label": "📚 学习", "color": "cyan"},
+    {"value": "医疗", "label": "💊 医疗", "color": "red"},
+    {"value": "居住", "label": "🏠 居住", "color": "geekblue"},
+    {"value": "社交", "label": "💝 社交", "color": "gold"},
+    {"value": "宠物", "label": "🐾 宠物", "color": "lime"},
+    {"value": "其他", "label": "💰 其他", "color": "default"},
+]
+
+@app.get("/api/expense-categories")
+def get_expense_categories():
+    """获取支出分类列表"""
+    return {"categories": EXPENSE_CATEGORIES}
+
+@app.post("/api/expenses")
+def create_expense(expense: ExpenseCreate):
+    """创建支出记录"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO expenses (date, category, name, amount, note, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (expense.date, expense.category, expense.name, expense.amount, 
+          expense.note or "", datetime.now().isoformat()))
+    
+    expense_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return {"success": True, "id": expense_id}
+
+@app.get("/api/expenses")
+def get_expenses(month: Optional[str] = None, limit: int = 100):
+    """获取支出记录列表"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if month:
+        cursor.execute('''
+            SELECT id, date, category, name, amount, note, timestamp
+            FROM expenses WHERE strftime('%Y-%m', date) = ?
+            ORDER BY date DESC, timestamp DESC
+            LIMIT ?
+        ''', (month, limit))
+    else:
+        cursor.execute('''
+            SELECT id, date, category, name, amount, note, timestamp
+            FROM expenses ORDER BY date DESC, timestamp DESC
+            LIMIT ?
+        ''', (limit,))
+    
+    expenses = []
+    for row in cursor.fetchall():
+        expenses.append({
+            "id": row['id'],
+            "date": row['date'],
+            "category": row['category'],
+            "name": row['name'],
+            "amount": row['amount'],
+            "note": row['note'],
+            "timestamp": row['timestamp']
+        })
+    
+    conn.close()
+    return {"expenses": expenses}
+
+@app.get("/api/expenses/summary/{month}")
+def get_expense_summary(month: str):
+    """获取月度支出汇总"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 按分类汇总
+    cursor.execute('''
+        SELECT category, SUM(amount) as total, COUNT(*) as count
+        FROM expenses WHERE strftime('%Y-%m', date) = ?
+        GROUP BY category
+        ORDER BY total DESC
+    ''', (month,))
+    
+    by_category = []
+    total_amount = 0
+    for row in cursor.fetchall():
+        by_category.append({
+            "category": row['category'],
+            "total": row['total'],
+            "count": row['count']
+        })
+        total_amount += row['total']
+    
+    # 按日期汇总
+    cursor.execute('''
+        SELECT date, SUM(amount) as total, COUNT(*) as count
+        FROM expenses WHERE strftime('%Y-%m', date) = ?
+        GROUP BY date
+        ORDER BY date ASC
+    ''', (month,))
+    
+    by_date = []
+    for row in cursor.fetchall():
+        by_date.append({
+            "date": row['date'],
+            "total": row['total'],
+            "count": row['count']
+        })
+    
+    conn.close()
+    
+    return {
+        "month": month,
+        "total": round(total_amount, 2),
+        "by_category": by_category,
+        "by_date": by_date,
+        "category_count": len(by_category),
+        "record_count": sum(item['count'] for item in by_date)
+    }
+
+@app.get("/api/expenses/months")
+def get_expense_months():
+    """获取有支出记录的月份列表"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT DISTINCT strftime('%Y-%m', date) as month
+        FROM expenses ORDER BY month DESC
+    ''')
+    
+    months = [row['month'] for row in cursor.fetchall()]
+    conn.close()
+    return {"months": months}
+
+@app.delete("/api/expenses/{expense_id}")
+def delete_expense(expense_id: int):
+    """删除支出记录"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="支出记录不存在")
+    
+    return {"success": True}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
