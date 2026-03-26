@@ -98,7 +98,6 @@ export default function ExpensePage() {
       await api.createExpense({
         date: values.date.format('YYYY-MM-DD'),
         category: values.category,
-        name: values.name,
         amount: values.amount,
         note: values.note || '',
       })
@@ -143,7 +142,7 @@ export default function ExpensePage() {
       title: '日期',
       dataIndex: 'date',
       key: 'date',
-      width: 110,
+      width: 120,
       render: (date: string) => (
         <span>
           <CalendarOutlined style={{ marginRight: 4, color: '#999' }} />
@@ -153,23 +152,17 @@ export default function ExpensePage() {
     },
     {
       title: '分类',
-      dataIndex: 'category',
-      key: 'category',
-      width: 100,
-      render: (cat: string) => (
-        <Tag color={getCategoryColor(cat)}>{getCategoryLabel(cat)}</Tag>
-      ),
-    },
-    {
-      title: '项目',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string, record: ExpenseItem) => (
+        <Tag color={getCategoryColor(record.category)}>{name}</Tag>
+      ),
     },
     {
       title: '金额',
       dataIndex: 'amount',
       key: 'amount',
-      width: 100,
+      width: 120,
       align: 'right' as const,
       render: (val: number) => (
         <span style={{ color: '#cf1322', fontWeight: 600 }}>
@@ -181,7 +174,6 @@ export default function ExpensePage() {
       title: '备注',
       dataIndex: 'note',
       key: 'note',
-      width: 120,
       ellipsis: true,
       render: (note: string) => note || '-',
     },
@@ -224,13 +216,6 @@ export default function ExpensePage() {
                 </Select.Option>
               ))}
             </Select>
-          </Form.Item>
-          <Form.Item
-            name="name"
-            label="项目"
-            rules={[{ required: true, message: '请输入项目名称' }]}
-          >
-            <Input placeholder="如：午餐、地铁、电影票" style={{ width: 160 }} />
           </Form.Item>
           <Form.Item
             name="amount"

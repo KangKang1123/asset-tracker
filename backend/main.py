@@ -598,7 +598,6 @@ class ExpenseCreate(BaseModel):
     """支出记录创建"""
     date: str  # YYYY-MM-DD
     category: str
-    name: str
     amount: float
     note: Optional[str] = ""
 
@@ -639,10 +638,17 @@ def create_expense(expense: ExpenseCreate):
     conn = get_db()
     cursor = conn.cursor()
     
+    # 获取分类的标签作为显示名称
+    category_label = expense.category
+    for cat in EXPENSE_CATEGORIES:
+        if cat["value"] == expense.category:
+            category_label = cat["label"]
+            break
+    
     cursor.execute('''
         INSERT INTO expenses (date, category, name, amount, note, timestamp)
         VALUES (?, ?, ?, ?, ?, ?)
-    ''', (expense.date, expense.category, expense.name, expense.amount, 
+    ''', (expense.date, expense.category, category_label, expense.amount, 
           expense.note or "", datetime.now().isoformat()))
     
     expense_id = cursor.lastrowid

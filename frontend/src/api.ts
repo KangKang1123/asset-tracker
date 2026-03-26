@@ -165,7 +165,6 @@ export const api = {
   async createExpense(data: {
     date: string
     category: string
-    name: string
     amount: number
     note?: string
   }): Promise<{ success: boolean; id: number }> {
