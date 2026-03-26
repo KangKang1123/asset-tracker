@@ -1,0 +1,44 @@
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+  color: #1677ff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ant-layout-header {
+  height: 64px;
+  line-height: 64px;
+}
+
+/* 卡片统计样式 */
+.stat-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.stat-card .ant-statistic-title {
+  font-size: 14px;
+  color: #666;
+}
+
+.stat-card .ant-statistic-content {
+  font-size: 28px;
+  font-weight: 600;
+}
+
+/* 表格样式优化 */
+.ant-table-wrapper {
+  margin-top: 16px;
+}
+
+/* 图表容器 */
+.chart-container {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+}
