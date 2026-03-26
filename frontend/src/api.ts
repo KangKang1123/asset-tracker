@@ -28,6 +28,46 @@ export interface ItemTrend {
   data: Record<string, number>
 }
 
+export interface HealthScoreDetail {
+  score: number
+  max_score: number
+  percentage: number
+  level: string
+  description: string
+}
+
+export interface HealthScoreResponse {
+  has_data: boolean
+  message?: string
+  month?: string
+  total_score: number
+  total_max: number
+  grade: string
+  grade_description: string
+  details: {
+    net_asset: HealthScoreDetail
+    liquidity: HealthScoreDetail
+    diversity: HealthScoreDetail
+    debt: HealthScoreDetail
+    investment: HealthScoreDetail
+  }
+  suggestions: string[]
+  metrics?: {
+    net_asset_ratio: number
+    cash_ratio: number
+    liability_ratio: number
+    investment_ratio: number
+    category_count: number
+  }
+  summary?: {
+    total_assets: number
+    total_liabilities: number
+    net_assets: number
+    cash_amount: number
+    investment_amount: number
+  }
+}
+
 const API_BASE = '/api'
 
 export const api = {
@@ -81,5 +121,11 @@ export const api = {
     const res = await fetch(`${API_BASE}/items-trend`)
     const data = await res.json()
     return data.items
+  },
+
+  // 获取健康度评分
+  async getHealthScore(): Promise<HealthScoreResponse> {
+    const res = await fetch(`${API_BASE}/health-score`)
+    return res.json()
   },
 }
