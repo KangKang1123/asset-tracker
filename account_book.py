@@ -19,6 +19,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# 尝试导入plotly，如果没有则使用streamlit内置图表
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
+
 # ==================== 资产类型配置 ====================
 ASSET_CATEGORIES = {
     "现金类": {
@@ -203,6 +211,84 @@ def get_latest_record():
     conn.close()
     return None, None
 
+def get_monthly_trend_data():
+    """获取每月资产趋势数据"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 获取所有记录，按月份排序
+    cursor.execute('''
+        SELECT r.id, r.month, r.timestamp, r.total_assets, r.total_liabilities, r.net_assets
+        FROM records r
+        ORDER BY r.month ASC, r.timestamp DESC
+    ''')
+    
+    # 按月份分组，取每月最后一条记录
+    monthly_data = {}
+    for row in cursor.fetchall():
+        month = row['month']
+        if month not in monthly_data:
+            monthly_data[month] = dict(row)
+    
+    # 获取每个类别每月的汇总
+    result = []
+    for month, record in monthly_data.items():
+        # 获取该记录的各类别汇总
+        cursor.execute('''
+            SELECT category, SUM(amount) as total
+            FROM items
+            WHERE record_id = ?
+            GROUP BY category
+        ''', (record['id'],))
+        
+        category_totals = {row['category']: row['total'] for row in cursor.fetchall()}
+        
+        result.append({
+            'month': month,
+            'total_assets': record['total_assets'],
+            'total_liabilities': record['total_liabilities'],
+            'net_assets': record['net_assets'],
+            'categories': category_totals
+        })
+    
+    conn.close()
+    return result
+
+def get_item_trend_data():
+    """获取各资产项的趋势数据"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 获取所有记录
+    cursor.execute('''
+        SELECT r.id, r.month, r.timestamp
+        FROM records r
+        ORDER BY r.month ASC, r.timestamp DESC
+    ''')
+    
+    # 按月份分组，取每月最后一条记录
+    monthly_records = {}
+    for row in cursor.fetchall():
+        month = row['month']
+        if month not in monthly_records:
+            monthly_records[month] = row['id']
+    
+    # 获取每个资产项每月的数据
+    item_data = {}
+    for month, record_id in monthly_records.items():
+        cursor.execute('''
+            SELECT category, name, amount FROM items WHERE record_id = ?
+        ''', (record_id,))
+        
+        for row in cursor.fetchall():
+            key = f"{row['category']} - {row['name']}"
+            if key not in item_data:
+                item_data[key] = {'category': row['category'], 'name': row['name'], 'data': {}}
+            item_data[key]['data'][month] = row['amount']
+    
+    conn.close()
+    return item_data
+
 # ==================== 计算函数 ====================
 def calculate_totals(items):
     """计算总资产、总负债、净资产"""
@@ -241,7 +327,7 @@ def main():
     st.title("📊 个人资产管理平台")
     st.markdown("---")
     
-    tab1, tab2 = st.tabs(["📝 新增资产记录", "📅 查看历史记录"])
+    tab1, tab2, tab3 = st.tabs(["📝 新增资产记录", "📅 查看历史记录", "📈 资产趋势图表"])
     
     # ==================== 新增记录 ====================
     with tab1:
@@ -488,6 +574,144 @@ def main():
                         st.markdown("---")
                 else:
                     st.warning(f"📅 {selected_month} 暂无记录")
+    
+    # ==================== 资产趋势图表 ====================
+    with tab3:
+        st.header("📈 资产趋势图表")
+        
+        trend_data = get_monthly_trend_data()
+        
+        if not trend_data or len(trend_data) < 1:
+            st.info("📝 暂无足够数据生成趋势图，请先添加记录")
+        else:
+            # 总览图表
+            st.subheader("📊 资产总览趋势")
+            
+            # 准备数据
+            months = [d['month'] for d in trend_data]
+            total_assets = [d['total_assets'] for d in trend_data]
+            total_liabilities = [d['total_liabilities'] for d in trend_data]
+            net_assets = [d['net_assets'] for d in trend_data]
+            
+            # 创建DataFrame
+            df_summary = pd.DataFrame({
+                '月份': months,
+                '总资产': total_assets,
+                '总负债': total_liabilities,
+                '净资产': net_assets
+            })
+            
+            if HAS_PLOTLY:
+                # 使用Plotly绘制交互式图表
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=months, y=total_assets, 
+                                        mode='lines+markers', name='总资产',
+                                        line=dict(color='#2ecc71', width=2)))
+                fig.add_trace(go.Scatter(x=months, y=total_liabilities, 
+                                        mode='lines+markers', name='总负债',
+                                        line=dict(color='#e74c3c', width=2)))
+                fig.add_trace(go.Scatter(x=months, y=net_assets, 
+                                        mode='lines+markers', name='净资产',
+                                        line=dict(color='#3498db', width=3)))
+                
+                fig.update_layout(
+                    xaxis_title='月份',
+                    yaxis_title='金额 (元)',
+                    hovermode='x unified',
+                    height=400
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                # 使用Streamlit内置图表
+                st.line_chart(df_summary.set_index('月份'))
+            
+            st.markdown("---")
+            
+            # 各类别资产趋势
+            st.subheader("📁 各类资产趋势")
+            
+            # 准备类别数据
+            category_names = list(ASSET_CATEGORIES.keys())
+            df_categories = pd.DataFrame({'月份': months})
+            
+            for cat in category_names:
+                cat_values = []
+                for d in trend_data:
+                    cat_values.append(d['categories'].get(cat, 0))
+                df_categories[cat] = cat_values
+            
+            if HAS_PLOTLY:
+                fig2 = go.Figure()
+                colors = ['#27ae60', '#2980b9', '#9b59b6', '#e74c3c', '#f39c12']
+                for i, cat in enumerate(category_names):
+                    cat_info = ASSET_CATEGORIES[cat]
+                    fig2.add_trace(go.Bar(
+                        name=cat,
+                        x=months,
+                        y=df_categories[cat].tolist(),
+                        marker_color=colors[i % len(colors)]
+                    ))
+                
+                fig2.update_layout(
+                    barmode='group',
+                    xaxis_title='月份',
+                    yaxis_title='金额 (元)',
+                    height=400
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.bar_chart(df_categories.set_index('月份'))
+            
+            st.markdown("---")
+            
+            # 各资产项趋势
+            st.subheader("📋 各资产项趋势")
+            
+            item_data = get_item_trend_data()
+            
+            if item_data:
+                # 让用户选择要查看的资产项
+                item_names = list(item_data.keys())
+                selected_items = st.multiselect(
+                    "选择要查看的资产项",
+                    options=item_names,
+                    default=item_names[:5] if len(item_names) > 5 else item_names
+                )
+                
+                if selected_items:
+                    # 准备数据
+                    df_items = pd.DataFrame({'月份': months})
+                    for item_key in selected_items:
+                        values = [item_data[item_key]['data'].get(m, 0) for m in months]
+                        df_items[item_key] = values
+                    
+                    if HAS_PLOTLY:
+                        fig3 = go.Figure()
+                        for item_key in selected_items:
+                            fig3.add_trace(go.Scatter(
+                                x=months,
+                                y=df_items[item_key].tolist(),
+                                mode='lines+markers',
+                                name=item_key
+                            ))
+                        
+                        fig3.update_layout(
+                            xaxis_title='月份',
+                            yaxis_title='金额 (元)',
+                            hovermode='x unified',
+                            height=400
+                        )
+                        st.plotly_chart(fig3, use_container_width=True)
+                    else:
+                        st.line_chart(df_items.set_index('月份'))
+            else:
+                st.info("暂无资产项数据")
+            
+            st.markdown("---")
+            
+            # 数据表格
+            st.subheader("📋 详细数据表")
+            st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
 # ==================== 主程序入口 ====================
 if __name__ == "__main__":
