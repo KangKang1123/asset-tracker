@@ -312,11 +312,27 @@ def main():
         
         if st.button("➕ 添加条目", use_container_width=True):
             if item_name:
-                st.session_state.asset_items.append({
-                    'category': selected_category,
-                    'name': item_name,
-                    'amount': item_amount
-                })
+                # 检查是否已存在同名条目
+                existing_index = None
+                for i, item in enumerate(st.session_state.asset_items):
+                    if item['name'] == item_name:
+                        existing_index = i
+                        break
+                
+                if existing_index is not None:
+                    # 更新已有条目
+                    st.session_state.asset_items[existing_index] = {
+                        'category': selected_category,
+                        'name': item_name,
+                        'amount': item_amount
+                    }
+                else:
+                    # 新增条目
+                    st.session_state.asset_items.append({
+                        'category': selected_category,
+                        'name': item_name,
+                        'amount': item_amount
+                    })
                 st.rerun()
             else:
                 st.warning("请输入名称")
@@ -336,10 +352,12 @@ def main():
                 items_by_category[cat].append(item)
             
             # 显示每个类别的条目
+            # 为每个条目分配全局唯一索引
+            global_idx = 0
             for category, items in items_by_category.items():
                 cat_info = ASSET_CATEGORIES[category]
                 with st.expander(f"{cat_info['icon']} {category} ({len(items)}项)", expanded=True):
-                    for i, item in enumerate(items):
+                    for item in items:
                         col1, col2, col3 = st.columns([3, 2, 1])
                         with col1:
                             st.write(f"**{item['name']}**")
@@ -349,10 +367,18 @@ def main():
                             else:
                                 st.write(f"💰 ¥{item['amount']:,.2f}")
                         with col3:
-                            idx = st.session_state.asset_items.index(item)
-                            if st.button("🗑️", key=f"del_{idx}"):
-                                st.session_state.asset_items.pop(idx)
+                            # 使用全局索引确保 key 唯一
+                            current_idx = global_idx
+                            if st.button("🗑️", key=f"del_{current_idx}"):
+                                # 通过内容匹配找到要删除的条目
+                                for j, it in enumerate(st.session_state.asset_items):
+                                    if (it['category'] == item['category'] and 
+                                        it['name'] == item['name'] and 
+                                        it['amount'] == item['amount']):
+                                        st.session_state.asset_items.pop(j)
+                                        break
                                 st.rerun()
+                        global_idx += 1
             
             st.markdown("---")
             
