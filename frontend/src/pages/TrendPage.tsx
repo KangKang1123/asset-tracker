@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, Row, Col, Spin, Empty, Select, Table, Divider, Statistic } from 'antd'
+import { Card, Row, Col, Spin, Empty, Select, Table, Statistic, Tag, Alert } from 'antd'
 import { Line, Column } from '@ant-design/charts'
 import { api, TrendData, ItemTrend } from '../api'
 
@@ -13,9 +13,39 @@ const CATEGORIES: Record<string, string> = {
 
 const COLORS = ['#52c41a', '#1890ff', '#722ed1', '#f5222d', '#fa8c16']
 
+interface Prediction {
+  can_predict: boolean
+  message?: string
+  current_month?: string
+  predicted_month?: string
+  current?: {
+    total_assets: number
+    total_liabilities: number
+    net_assets: number
+  }
+  predicted?: {
+    month: string
+    total_assets: number
+    total_liabilities: number
+    net_assets: number
+  }
+  change?: {
+    avg_asset_change: number
+    avg_liability_change: number
+    avg_net_change: number
+  }
+  trend?: {
+    assets: string
+    liabilities: string
+    net: string
+  }
+  history_count?: number
+}
+
 export default function TrendPage() {
   const [trendData, setTrendData] = useState<TrendData[]>([])
   const [itemTrend, setItemTrend] = useState<Record<string, ItemTrend>>({})
+  const [prediction, setPrediction] = useState<Prediction | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
 
@@ -26,9 +56,14 @@ export default function TrendPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [trend, items] = await Promise.all([api.getTrend(), api.getItemsTrend()])
+      const [trend, items, pred] = await Promise.all([
+        api.getTrend(),
+        api.getItemsTrend(),
+        fetch('/api/trend/predict').then((r) => r.json()),
+      ])
       setTrendData(trend)
       setItemTrend(items)
+      setPrediction(pred)
       // 默认选中前5项
       const itemKeys = Object.keys(items)
       setSelectedItems(itemKeys.slice(0, 5))
@@ -243,6 +278,92 @@ export default function TrendPage() {
           </Col>
         </Row>
       </Card>
+
+      {/* 趋势预测 */}
+      {prediction && prediction.can_predict && (
+        <Card
+          title={
+            <span>
+              🔮 下月预测
+              <Tag color="blue" style={{ marginLeft: 8 }}>
+                基于{prediction.history_count}个月数据
+              </Tag>
+            </span>
+          }
+          bordered={false}
+          style={{ marginBottom: 24 }}
+        >
+          <Alert
+            message={`预测 ${prediction.predicted_month} 的资产情况`}
+            description={`根据过去${prediction.history_count}个月的平均变化趋势预测`}
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <Row gutter={16}>
+            <Col span={8}>
+              <Statistic
+                title="💰 预测总资产"
+                value={prediction.predicted?.total_assets}
+                precision={0}
+                prefix="¥"
+                valueStyle={{
+                  color: prediction.trend?.assets === '上升' ? '#3f8600' : prediction.trend?.assets === '下降' ? '#cf1322' : '#666',
+                }}
+                suffix={
+                  <Tag color={prediction.trend?.assets === '上升' ? 'green' : prediction.trend?.assets === '下降' ? 'red' : 'default'}>
+                    {prediction.trend?.assets}
+                  </Tag>
+                }
+              />
+              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
+                月均变化: {prediction.change?.avg_asset_change && prediction.change.avg_asset_change > 0 ? '+' : ''}
+                {prediction.change?.avg_asset_change?.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}元
+              </div>
+            </Col>
+            <Col span={8}>
+              <Statistic
+                title="💳 预测总负债"
+                value={prediction.predicted?.total_liabilities}
+                precision={0}
+                prefix="¥"
+                valueStyle={{
+                  color: prediction.trend?.liabilities === '下降' ? '#3f8600' : prediction.trend?.liabilities === '上升' ? '#cf1322' : '#666',
+                }}
+                suffix={
+                  <Tag color={prediction.trend?.liabilities === '下降' ? 'green' : prediction.trend?.liabilities === '上升' ? 'red' : 'default'}>
+                    {prediction.trend?.liabilities}
+                  </Tag>
+                }
+              />
+              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
+                月均变化: {prediction.change?.avg_liability_change && prediction.change.avg_liability_change > 0 ? '+' : ''}
+                {prediction.change?.avg_liability_change?.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}元
+              </div>
+            </Col>
+            <Col span={8}>
+              <Statistic
+                title="💎 预测净资产"
+                value={prediction.predicted?.net_assets}
+                precision={0}
+                prefix="¥"
+                valueStyle={{
+                  color: prediction.trend?.net === '上升' ? '#3f8600' : prediction.trend?.net === '下降' ? '#cf1322' : '#666',
+                }}
+                suffix={
+                  <Tag color={prediction.trend?.net === '上升' ? 'green' : prediction.trend?.net === '下降' ? 'red' : 'default'}>
+                    {prediction.trend?.net}
+                  </Tag>
+                }
+              />
+              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
+                月均变化: {prediction.change?.avg_net_change && prediction.change.avg_net_change > 0 ? '+' : ''}
+                {prediction.change?.avg_net_change?.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}元
+              </div>
+            </Col>
+          </Row>
+        </Card>
+      )}
 
       {/* 总览趋势图 */}
       <Card title="📈 资产总览趋势" bordered={false} style={{ marginBottom: 24 }}>

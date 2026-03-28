@@ -287,6 +287,93 @@ def get_trend():
     conn.close()
     return {"data": result}
 
+@app.get("/api/trend/predict")
+def predict_trend():
+    """预测下月资产趋势"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT month, total_assets, total_liabilities, net_assets
+        FROM records 
+        ORDER BY month ASC
+    ''')
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if len(rows) < 2:
+        return {
+            "can_predict": False,
+            "message": "至少需要2个月的数据才能预测"
+        }
+    
+    # 计算平均增长率
+    asset_changes = []
+    liability_changes = []
+    net_changes = []
+    
+    for i in range(1, len(rows)):
+        asset_changes.append(rows[i]['total_assets'] - rows[i-1]['total_assets'])
+        liability_changes.append(rows[i]['total_liabilities'] - rows[i-1]['total_liabilities'])
+        net_changes.append(rows[i]['net_assets'] - rows[i-1]['net_assets'])
+    
+    avg_asset_change = sum(asset_changes) / len(asset_changes) if asset_changes else 0
+    avg_liability_change = sum(liability_changes) / len(liability_changes) if liability_changes else 0
+    avg_net_change = sum(net_changes) / len(net_changes) if net_changes else 0
+    
+    # 最新数据
+    latest = rows[-1]
+    next_month_num = int(latest['month'].split('-')[1]) + 1
+    next_year = int(latest['month'].split('-')[0])
+    if next_month_num > 12:
+        next_month_num = 1
+        next_year += 1
+    next_month = f"{next_year}-{next_month_num:02d}"
+    
+    # 预测值
+    predicted = {
+        "month": next_month,
+        "total_assets": latest['total_assets'] + avg_asset_change,
+        "total_liabilities": latest['total_liabilities'] + avg_liability_change,
+        "net_assets": latest['net_assets'] + avg_net_change
+    }
+    
+    # 趋势方向
+    def get_trend_direction(changes):
+        if not changes:
+            return "稳定"
+        avg = sum(changes) / len(changes)
+        if avg > 100:
+            return "上升"
+        elif avg < -100:
+            return "下降"
+        else:
+            return "稳定"
+    
+    return {
+        "can_predict": True,
+        "current_month": latest['month'],
+        "predicted_month": next_month,
+        "current": {
+            "total_assets": latest['total_assets'],
+            "total_liabilities": latest['total_liabilities'],
+            "net_assets": latest['net_assets']
+        },
+        "predicted": predicted,
+        "change": {
+            "avg_asset_change": round(avg_asset_change, 2),
+            "avg_liability_change": round(avg_liability_change, 2),
+            "avg_net_change": round(avg_net_change, 2)
+        },
+        "trend": {
+            "assets": get_trend_direction(asset_changes),
+            "liabilities": get_trend_direction(liability_changes),
+            "net": get_trend_direction(net_changes)
+        },
+        "history_count": len(rows)
+    }
+
 @app.get("/api/items-trend")
 def get_items_trend():
     """获取各资产项趋势数据"""
