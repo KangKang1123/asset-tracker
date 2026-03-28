@@ -42,3 +42,95 @@
   padding: 16px;
   margin-top: 16px;
 }
+
+/* ==================== 响应式布局 ==================== */
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    position: fixed !important;
+    left: -200px;
+    z-index: 100;
+    height: 100vh;
+    transition: left 0.3s;
+  }
+  
+  .ant-layout-sider.ant-layout-sider-collapsed {
+    left: -80px;
+  }
+  
+  .ant-layout-content {
+    margin: 12px !important;
+    padding: 12px !important;
+  }
+  
+  .ant-card {
+    margin-bottom: 12px !important;
+  }
+  
+  .ant-row {
+    margin-left: -8px !important;
+    margin-right: -8px !important;
+  }
+  
+  .ant-col {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  
+  .ant-statistic-title {
+    font-size: 12px;
+  }
+  
+  .ant-statistic-content {
+    font-size: 18px !important;
+  }
+}
+
+/* 小屏幕适配 */
+@media (max-width: 576px) {
+  .ant-table {
+    font-size: 12px;
+  }
+  
+  .ant-table-thead > tr > th {
+    padding: 8px 4px;
+  }
+  
+  .ant-table-tbody > tr > td {
+    padding: 8px 4px;
+  }
+  
+  .ant-card-head-title {
+    font-size: 14px;
+  }
+  
+  .ant-form-item-label {
+    padding-bottom: 4px;
+  }
+  
+  .ant-input, .ant-input-number, .ant-select-selector {
+    font-size: 16px !important;
+  }
+  
+  .recharts-wrapper {
+    font-size: 12px;
+  }
+  
+  .recharts-legend-item-text {
+    font-size: 11px;
+  }
+}
+
+/* 触摸优化 */
+@media (hover: none) and (pointer: coarse) {
+  .ant-btn {
+    min-height: 44px;
+  }
+  
+  .ant-select-selector {
+    min-height: 44px;
+  }
+  
+  .ant-input {
+    min-height: 44px;
+  }
+}

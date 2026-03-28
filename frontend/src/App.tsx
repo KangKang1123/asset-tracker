@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, Menu, theme } from 'antd'
+import { ConfigProvider, Layout, Menu, theme, Drawer } from 'antd'
 import {
   WalletOutlined,
   HistoryOutlined,
@@ -8,6 +8,7 @@ import {
   ShoppingCartOutlined,
   BellOutlined,
   SettingOutlined,
+  MenuOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
 import RecordPage from './pages/RecordPage'
@@ -26,6 +27,17 @@ type PageKey = 'record' | 'history' | 'trend' | 'health' | 'expense' | 'bills' |
 function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('record')
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const menuItems = [
     {
@@ -98,25 +110,27 @@ function App() {
       }}
     >
       <Layout style={{ minHeight: '100vh' }}>
-        <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          theme="light"
-          style={{
-            boxShadow: '2px 0 8px rgba(0,0,0,0.06)',
-          }}
-        >
-          <div className="logo">
-            {collapsed ? '💰' : '💰 资产管理'}
-          </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[currentPage]}
-            items={menuItems}
-            onClick={(e) => setCurrentPage(e.key as PageKey)}
-          />
-        </Sider>
+        {!isMobile && (
+          <Sider
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            theme="light"
+            style={{
+              boxShadow: '2px 0 8px rgba(0,0,0,0.06)',
+            }}
+          >
+            <div className="logo">
+              {collapsed ? '💰' : '💰 资产管理'}
+            </div>
+            <Menu
+              mode="inline"
+              selectedKeys={[currentPage]}
+              items={menuItems}
+              onClick={(e) => setCurrentPage(e.key as PageKey)}
+            />
+          </Sider>
+        )}
         <Layout>
           <Header
             style={{
@@ -125,11 +139,18 @@ function App() {
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'space-between',
             }}
           >
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
               个人资产管理平台
             </h1>
+            {isMobile && (
+              <MenuOutlined
+                style={{ fontSize: 20, cursor: 'pointer' }}
+                onClick={() => setMobileMenuOpen(true)}
+              />
+            )}
           </Header>
           <Content
             style={{
@@ -145,6 +166,25 @@ function App() {
             {renderPage()}
           </Content>
         </Layout>
+        
+        {/* 移动端抽屉菜单 */}
+        <Drawer
+          title="菜单"
+          placement="right"
+          onClose={() => setMobileMenuOpen(false)}
+          open={mobileMenuOpen}
+          width={250}
+        >
+          <Menu
+            mode="vertical"
+            selectedKeys={[currentPage]}
+            items={menuItems}
+            onClick={(e) => {
+              setCurrentPage(e.key as PageKey)
+              setMobileMenuOpen(false)
+            }}
+          />
+        </Drawer>
       </Layout>
     </ConfigProvider>
   )
