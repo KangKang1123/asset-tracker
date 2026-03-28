@@ -16,6 +16,8 @@ import {
   Empty,
   Popconfirm,
   Space,
+  Progress,
+  Modal,
 } from 'antd'
 import {
   PlusOutlined,
@@ -24,6 +26,7 @@ import {
   PieChartOutlined,
   DownloadOutlined,
   LineChartOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import dayjs from 'dayjs'
@@ -43,6 +46,9 @@ export default function ExpensePage() {
   const [summary, setSummary] = useState<ExpenseSummary | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'))
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
+  const [budgetStatus, setBudgetStatus] = useState<any>(null)
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false)
+  const [budgetForm] = Form.useForm()
 
   useEffect(() => {
     loadCategories()
@@ -52,6 +58,7 @@ export default function ExpensePage() {
   useEffect(() => {
     loadExpenses()
     loadSummary()
+    loadBudgetStatus()
   }, [selectedMonth])
 
   const loadCategories = async () => {
@@ -90,6 +97,36 @@ export default function ExpensePage() {
       setSummary(data)
     } catch (err) {
       console.error('加载汇总失败:', err)
+    }
+  }
+
+  const loadBudgetStatus = async () => {
+    try {
+      const data = await api.getBudgetStatus(selectedMonth)
+      setBudgetStatus(data)
+    } catch (err) {
+      console.error('加载预算状态失败:', err)
+    }
+  }
+
+  const handleSetBudget = () => {
+    budgetForm.setFieldsValue({
+      total_budget: budgetStatus?.total_budget || 5000,
+    })
+    setBudgetModalVisible(true)
+  }
+
+  const handleSaveBudget = async (values: any) => {
+    try {
+      await api.saveBudget({
+        month: selectedMonth,
+        total_budget: values.total_budget,
+      })
+      message.success('预算设置成功')
+      setBudgetModalVisible(false)
+      loadBudgetStatus()
+    } catch (err) {
+      message.error('设置失败')
     }
   }
 
@@ -242,27 +279,84 @@ export default function ExpensePage() {
 
       {/* 月份选择 */}
       <Card bordered={false} style={{ marginBottom: 16 }}>
-        <Space>
-          <span>查看月份：</span>
-          <Select
-            value={selectedMonth}
-            onChange={setSelectedMonth}
-            style={{ width: 140 }}
-          >
-            {availableMonths.length > 0 ? (
-              availableMonths.map((m) => (
-                <Select.Option key={m} value={m}>
-                  {m}
+        <Row justify="space-between" align="middle">
+          <Space>
+            <span>查看月份：</span>
+            <Select
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              style={{ width: 140 }}
+            >
+              {availableMonths.length > 0 ? (
+                availableMonths.map((m) => (
+                  <Select.Option key={m} value={m}>
+                    {m}
+                  </Select.Option>
+                ))
+              ) : (
+                <Select.Option value={dayjs().format('YYYY-MM')}>
+                  {dayjs().format('YYYY-MM')}
                 </Select.Option>
-              ))
-            ) : (
-              <Select.Option value={dayjs().format('YYYY-MM')}>
-                {dayjs().format('YYYY-MM')}
-              </Select.Option>
-            )}
-          </Select>
-        </Space>
+              )}
+            </Select>
+          </Space>
+          <Button icon={<SettingOutlined />} onClick={handleSetBudget}>
+            设置预算
+          </Button>
+        </Row>
       </Card>
+
+      {/* 预算进度 */}
+      {budgetStatus && budgetStatus.has_budget && (
+        <Card bordered={false} style={{ marginBottom: 24 }}>
+          <Row gutter={16} align="middle">
+            <Col span={6}>
+              <Statistic
+                title="月度预算"
+                value={budgetStatus.total_budget}
+                precision={0}
+                prefix="¥"
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="已支出"
+                value={budgetStatus.total_spent}
+                precision={0}
+                prefix="¥"
+                valueStyle={{ color: budgetStatus.percent > 80 ? '#cf1322' : '#3f8600' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="剩余预算"
+                value={budgetStatus.remaining}
+                precision={0}
+                prefix="¥"
+                valueStyle={{ color: budgetStatus.remaining < 0 ? '#cf1322' : '#3f8600' }}
+              />
+            </Col>
+            <Col span={6}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ marginBottom: 8 }}>预算使用率</div>
+                <Progress
+                  type="circle"
+                  percent={Math.min(budgetStatus.percent, 100)}
+                  strokeColor={budgetStatus.percent > 80 ? '#cf1322' : '#52c41a'}
+                  format={(percent) => `${percent?.toFixed(0)}%`}
+                  width={70}
+                />
+              </div>
+            </Col>
+          </Row>
+          <Progress
+            percent={Math.min(budgetStatus.percent, 100)}
+            showInfo={false}
+            strokeColor={budgetStatus.percent > 80 ? '#cf1322' : '#52c41a'}
+            style={{ marginTop: 16 }}
+          />
+        </Card>
+      )}
 
       {/* 汇总卡片 */}
       {summary && (
@@ -401,6 +495,37 @@ export default function ExpensePage() {
           <Empty description="暂无支出记录" style={{ padding: 40 }} />
         )}
       </Card>
+
+      {/* 预算设置弹窗 */}
+      <Modal
+        title="设置月度预算"
+        open={budgetModalVisible}
+        onCancel={() => setBudgetModalVisible(false)}
+        onOk={() => budgetForm.submit()}
+      >
+        <Form
+          form={budgetForm}
+          layout="vertical"
+          onFinish={handleSaveBudget}
+        >
+          <Form.Item
+            name="total_budget"
+            label="月度总预算"
+            rules={[{ required: true, message: '请输入预算金额' }]}
+          >
+            <InputNumber
+              min={0}
+              precision={0}
+              prefix="¥"
+              style={{ width: '100%' }}
+              placeholder="输入本月预算金额"
+            />
+          </Form.Item>
+          <div style={{ color: '#999', fontSize: 12 }}>
+            提示：预算设置后，支出页面会显示预算使用进度
+          </div>
+        </Form>
+      </Modal>
     </div>
   )
 }

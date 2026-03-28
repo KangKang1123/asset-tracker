@@ -204,4 +204,52 @@ export const api = {
     })
     return res.json()
   },
+
+  // ========== 预算管理 ==========
+  // 获取预算
+  async getBudget(month: string): Promise<{
+    exists: boolean
+    month: string
+    total_budget: number
+    category_budgets: Record<string, number>
+    spent: number
+    remaining: number
+  }> {
+    const res = await fetch(`${API_BASE}/budgets/${month}`)
+    return res.json()
+  },
+
+  // 创建或更新预算
+  async saveBudget(data: {
+    month: string
+    total_budget: number
+    category_budgets?: Record<string, number>
+  }): Promise<{ success: boolean; month: string }> {
+    const res = await fetch(`${API_BASE}/budgets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return res.json()
+  },
+
+  // 获取预算执行状态
+  async getBudgetStatus(month: string): Promise<{
+    has_budget: boolean
+    month: string
+    total_budget?: number
+    total_spent?: number
+    remaining?: number
+    percent?: number
+    category_status?: {
+      category: string
+      budget: number
+      spent: number
+      remaining: number
+      percent: number
+    }[]
+  }> {
+    const res = await fetch(`${API_BASE}/budgets/${month}/status`)
+    return res.json()
+  },
 }

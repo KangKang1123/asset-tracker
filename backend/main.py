@@ -89,6 +89,18 @@ def ensure_db():
         )
     ''')
     
+    # 预算表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month TEXT NOT NULL UNIQUE,
+            total_budget REAL DEFAULT 0,
+            category_budgets TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -1028,6 +1040,158 @@ def export_expenses(month: Optional[str] = None):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={encoded_filename}"}
     )
+
+# ==================== 预算管理功能 ====================
+class BudgetCreate(BaseModel):
+    """预算创建"""
+    month: str
+    total_budget: float
+    category_budgets: Optional[dict] = {}
+
+@app.get("/api/budgets/{month}")
+def get_budget(month: str):
+    """获取指定月份的预算"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, month, total_budget, category_budgets, created_at, updated_at
+        FROM budgets WHERE month = ?
+    ''', (month,))
+    
+    row = cursor.fetchone()
+    
+    if not row:
+        # 获取该月支出
+        cursor.execute('''
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM expenses WHERE strftime('%Y-%m', date) = ?
+        ''', (month,))
+        spent = cursor.fetchone()['total']
+        conn.close()
+        
+        return {
+            "exists": False,
+            "month": month,
+            "total_budget": 0,
+            "category_budgets": {},
+            "spent": spent,
+            "remaining": 0
+        }
+    
+    import json
+    category_budgets = json.loads(row['category_budgets'] or '{}')
+    
+    # 获取该月支出
+    cursor.execute('''
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM expenses WHERE strftime('%Y-%m', date) = ?
+    ''', (month,))
+    spent = cursor.fetchone()['total']
+    conn.close()
+    
+    return {
+        "exists": True,
+        "id": row['id'],
+        "month": row['month'],
+        "total_budget": row['total_budget'],
+        "category_budgets": category_budgets,
+        "spent": spent,
+        "remaining": row['total_budget'] - spent,
+        "created_at": row['created_at'],
+        "updated_at": row['updated_at']
+    }
+
+@app.post("/api/budgets")
+def create_or_update_budget(budget: BudgetCreate):
+    """创建或更新预算"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    import json
+    now = datetime.now().isoformat()
+    category_json = json.dumps(budget.category_budgets, ensure_ascii=False)
+    
+    # 检查是否已存在
+    cursor.execute('SELECT id FROM budgets WHERE month = ?', (budget.month,))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute('''
+            UPDATE budgets 
+            SET total_budget = ?, category_budgets = ?, updated_at = ?
+            WHERE month = ?
+        ''', (budget.total_budget, category_json, now, budget.month))
+    else:
+        cursor.execute('''
+            INSERT INTO budgets (month, total_budget, category_budgets, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (budget.month, budget.total_budget, category_json, now, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {"success": True, "month": budget.month}
+
+@app.get("/api/budgets/{month}/status")
+def get_budget_status(month: str):
+    """获取预算执行状态"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 获取预算
+    cursor.execute('SELECT * FROM budgets WHERE month = ?', (month,))
+    budget_row = cursor.fetchone()
+    
+    if not budget_row:
+        conn.close()
+        return {"has_budget": False, "month": month}
+    
+    import json
+    category_budgets = json.loads(budget_row['category_budgets'] or '{}')
+    total_budget = budget_row['total_budget']
+    
+    # 获取总支出
+    cursor.execute('''
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM expenses WHERE strftime('%Y-%m', date) = ?
+    ''', (month,))
+    total_spent = cursor.fetchone()['total']
+    
+    # 获取分类支出
+    cursor.execute('''
+        SELECT category, SUM(amount) as total
+        FROM expenses WHERE strftime('%Y-%m', date) = ?
+        GROUP BY category
+    ''', (month,))
+    
+    category_spent = {}
+    for row in cursor.fetchall():
+        category_spent[row['category']] = row['total']
+    
+    conn.close()
+    
+    # 计算各项状态
+    category_status = []
+    for cat, budget_amount in category_budgets.items():
+        spent = category_spent.get(cat, 0)
+        category_status.append({
+            "category": cat,
+            "budget": budget_amount,
+            "spent": spent,
+            "remaining": budget_amount - spent,
+            "percent": (spent / budget_amount * 100) if budget_amount > 0 else 0
+        })
+    
+    return {
+        "has_budget": True,
+        "month": month,
+        "total_budget": total_budget,
+        "total_spent": total_spent,
+        "remaining": total_budget - total_spent,
+        "percent": (total_spent / total_budget * 100) if total_budget > 0 else 0,
+        "category_status": category_status
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
