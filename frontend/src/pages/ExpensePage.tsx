@@ -110,17 +110,40 @@ export default function ExpensePage() {
   }
 
   const handleSetBudget = () => {
+    // 获取当前分类列表
+    const categoryBudgets: Record<string, number> = {}
+    categories.forEach((cat) => {
+      categoryBudgets[cat.value] = 0
+    })
+    
+    // 如果已有预算，加载现有值
+    if (budgetStatus?.category_budgets) {
+      Object.assign(categoryBudgets, budgetStatus.category_budgets)
+    }
+    
     budgetForm.setFieldsValue({
       total_budget: budgetStatus?.total_budget || 5000,
+      category_budgets: categoryBudgets,
     })
     setBudgetModalVisible(true)
   }
 
   const handleSaveBudget = async (values: any) => {
     try {
+      // 过滤掉值为0或undefined的分类预算
+      const categoryBudgets: Record<string, number> = {}
+      if (values.category_budgets) {
+        Object.entries(values.category_budgets).forEach(([key, value]) => {
+          if (value && value > 0) {
+            categoryBudgets[key] = value
+          }
+        })
+      }
+      
       await api.saveBudget({
         month: selectedMonth,
         total_budget: values.total_budget,
+        category_budgets: categoryBudgets,
       })
       message.success('预算设置成功')
       setBudgetModalVisible(false)
@@ -355,6 +378,48 @@ export default function ExpensePage() {
             strokeColor={budgetStatus.percent > 80 ? '#cf1322' : '#52c41a'}
             style={{ marginTop: 16 }}
           />
+          
+          {/* 分类预算进度 */}
+          {budgetStatus.category_status && budgetStatus.category_status.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ fontWeight: 500, marginBottom: 12 }}>分类预算进度</div>
+              <Row gutter={[16, 12]}>
+                {budgetStatus.category_status.map((item: any) => {
+                  const catInfo = categories.find((c) => c.value === item.category)
+                  const isOver = item.percent > 100
+                  const isWarning = item.percent > 80
+                  
+                  return (
+                    <Col span={12} key={item.category}>
+                      <Card size="small" style={{ background: isOver ? '#fff1f0' : '#fafafa' }}>
+                        <Row justify="space-between" align="middle">
+                          <Col>
+                            <Tag color={catInfo?.color}>{catInfo?.label || item.category}</Tag>
+                          </Col>
+                          <Col>
+                            <span style={{ fontSize: 12, color: '#999' }}>
+                              ¥{item.spent.toFixed(0)} / ¥{item.budget.toFixed(0)}
+                            </span>
+                          </Col>
+                        </Row>
+                        <Progress
+                          percent={Math.min(item.percent, 100)}
+                          size="small"
+                          strokeColor={isOver ? '#cf1322' : isWarning ? '#fa8c16' : '#52c41a'}
+                          style={{ marginTop: 8 }}
+                          format={(percent) => 
+                            isOver 
+                              ? `超支 ${(item.spent - item.budget).toFixed(0)}元` 
+                              : `${percent?.toFixed(0)}%`
+                          }
+                        />
+                      </Card>
+                    </Col>
+                  )
+                })}
+              </Row>
+            </div>
+          )}
         </Card>
       )}
 
@@ -502,6 +567,7 @@ export default function ExpensePage() {
         open={budgetModalVisible}
         onCancel={() => setBudgetModalVisible(false)}
         onOk={() => budgetForm.submit()}
+        width={600}
       >
         <Form
           form={budgetForm}
@@ -521,8 +587,31 @@ export default function ExpensePage() {
               placeholder="输入本月预算金额"
             />
           </Form.Item>
-          <div style={{ color: '#999', fontSize: 12 }}>
-            提示：预算设置后，支出页面会显示预算使用进度
+          <div style={{ marginBottom: 8, fontWeight: 500 }}>分类预算（可选）</div>
+          <Row gutter={[8, 8]}>
+            {categories.map((cat) => (
+              <Col span={12} key={cat.value}>
+                <Form.Item
+                  name={['category_budgets', cat.value]}
+                  label={
+                    <Tag color={cat.color} style={{ margin: 0 }}>
+                      {cat.label}
+                    </Tag>
+                  }
+                >
+                  <InputNumber
+                    min={0}
+                    precision={0}
+                    prefix="¥"
+                    style={{ width: '100%' }}
+                    placeholder="0"
+                  />
+                </Form.Item>
+              </Col>
+            ))}
+          </Row>
+          <div style={{ color: '#999', fontSize: 12, marginTop: 8 }}>
+            提示：设置分类预算后，支出页面会显示各分类预算使用进度
           </div>
         </Form>
       </Modal>
