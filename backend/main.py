@@ -14,8 +14,10 @@ from pathlib import Path
 import uvicorn
 import io
 import urllib.parse
+import csv
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from fastapi import UploadFile, File
 
 # ==================== 配置 ====================
 DATA_DIR = Path.home() / ".account_book"
@@ -1535,6 +1537,89 @@ def import_backup(backup: dict):
                 "budgets": len(data.get("budgets", [])),
                 "bills": len(data.get("bills", [])),
             }
+        }
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+# ==================== CSV导入功能 ====================
+@app.post("/api/import/csv")
+async def import_csv(file: UploadFile = File(...)):
+    """导入CSV格式的支出记录"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        content = await file.read()
+        text = content.decode('utf-8')
+        lines = text.strip().split('\n')
+        
+        if len(lines) < 2:
+            return {"success": False, "error": "CSV文件至少需要表头和一行数据"}
+        
+        # 解析表头
+        headers = lines[0].split(',')
+        headers = [h.strip().lower() for h in headers]
+        
+        # 支持的列名映射
+        column_map = {
+            'date': 'date',
+            '日期': 'date',
+            'category': 'category',
+            '分类': 'category',
+            'name': 'name',
+            '名称': 'name',
+            'amount': 'amount',
+            '金额': 'amount',
+            'note': 'note',
+            '备注': 'note',
+        }
+        
+        # 找到需要的列索引
+        col_indices = {}
+        for i, h in enumerate(headers):
+            if h in column_map:
+                col_indices[column_map[h]] = i
+        
+        if 'date' not in col_indices or 'amount' not in col_indices:
+            return {"success": False, "error": "CSV必须包含日期和金额列"}
+        
+        # 解析数据行
+        imported = 0
+        errors = []
+        
+        for i, line in enumerate(lines[1:], start=2):
+            try:
+                values = line.split(',')
+                
+                date = values[col_indices['date']].strip()
+                amount = float(values[col_indices['amount']].strip())
+                category = values[col_indices.get('category', -1)].strip() if col_indices.get('category', -1) >= 0 else '其他'
+                name = values[col_indices.get('name', -1)].strip() if col_indices.get('name', -1) >= 0 else '导入记录'
+                note = values[col_indices.get('note', -1)].strip() if col_indices.get('note', -1) >= 0 else ''
+                
+                # 验证日期格式
+                if not date or len(date) < 10:
+                    errors.append(f"第{i}行: 日期格式错误")
+                    continue
+                
+                # 插入数据库
+                cursor.execute('''
+                    INSERT INTO expenses (date, category, name, amount, note, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (date, category, name, amount, note, datetime.now().isoformat()))
+                
+                imported += 1
+            except Exception as e:
+                errors.append(f"第{i}行: {str(e)}")
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "imported": imported,
+            "errors": errors[:10] if errors else []
         }
     except Exception as e:
         conn.close()

@@ -9,10 +9,11 @@ import {
   Typography,
   Alert,
   Popconfirm,
+  Tabs,
 } from 'antd'
-import { DownloadOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons'
+import { DownloadOutlined, UploadOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'
 
-const { Title, Paragraph } = Typography
+const { Title, Paragraph, Text } = Typography
 
 export default function SettingsPage() {
   const [importing, setImporting] = useState(false)
@@ -69,6 +70,36 @@ export default function SettingsPage() {
     return false
   }
 
+  const handleImportCSV = async (file: File) => {
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/import/csv', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        message.success(`导入成功：${result.imported}条记录`)
+        if (result.errors && result.errors.length > 0) {
+          message.warning(`部分行导入失败：${result.errors.join(', ')}`)
+        }
+        window.location.reload()
+      } else {
+        message.error(`导入失败：${result.error}`)
+      }
+    } catch (err) {
+      message.error('导入失败，请检查CSV格式')
+    } finally {
+      setImporting(false)
+    }
+    return false
+  }
+
   const handleClearData = async () => {
     try {
       // 清空所有数据（需要后端API支持，这里只是示例）
@@ -106,6 +137,27 @@ export default function SettingsPage() {
             </Button>
           </Upload>
         </Space>
+
+        <Divider />
+
+        <Title level={5}>CSV导入</Title>
+        <Paragraph type="secondary">
+          从CSV文件导入支出记录。CSV文件需包含以下列：日期、金额、分类、名称、备注
+        </Paragraph>
+        <Text code>日期,分类,名称,金额,备注</Text>
+        <Text code>2026-03-28,餐饮,午餐,35.00,工作餐</Text>
+        
+        <div style={{ marginTop: 16 }}>
+          <Upload
+            accept=".csv"
+            beforeUpload={handleImportCSV}
+            showUploadList={false}
+          >
+            <Button icon={<FileTextOutlined />} loading={importing}>
+              导入CSV
+            </Button>
+          </Upload>
+        </div>
 
         <Divider />
 
