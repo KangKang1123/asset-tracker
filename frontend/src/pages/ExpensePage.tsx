@@ -24,6 +24,7 @@ import {
   DeleteOutlined,
   CalendarOutlined,
   PieChartOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { api, ExpenseItem, ExpenseCategory, ExpenseSummary } from '../api'
@@ -352,7 +353,21 @@ export default function ExpensePage() {
       )}
 
       {/* 支出列表 */}
-      <Card title={`📋 ${selectedMonth} 支出明细`} bordered={false}>
+      <Card 
+        title={`📋 ${selectedMonth} 支出明细`} 
+        bordered={false}
+        extra={
+          <Button 
+            type="primary" 
+            icon={<DownloadOutlined />} 
+            onClick={() => {
+              window.open(`http://localhost:8000/api/export/expenses?month=${selectedMonth}`, '_blank')
+            }}
+          >
+            导出Excel
+          </Button>
+        }
+      >
         {expenses.length > 0 ? (
           <Table
             columns={columns}

@@ -5,12 +5,17 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 import uvicorn
+import io
+import urllib.parse
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # ==================== 配置 ====================
 DATA_DIR = Path.home() / ".account_book"
@@ -772,6 +777,257 @@ def delete_expense(expense_id: int):
         raise HTTPException(status_code=404, detail="支出记录不存在")
     
     return {"success": True}
+
+# ==================== Excel 导出功能 ====================
+@app.get("/api/export/assets")
+def export_assets():
+    """导出资产记录为Excel"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 获取所有记录
+    cursor.execute('''
+        SELECT id, month, timestamp, total_assets, total_liabilities, net_assets
+        FROM records ORDER BY month DESC, timestamp DESC
+    ''')
+    records = cursor.fetchall()
+    
+    if not records:
+        conn.close()
+        raise HTTPException(status_code=404, detail="暂无资产记录")
+    
+    # 创建Excel
+    wb = Workbook()
+    
+    # === Sheet 1: 资产概览 ===
+    ws_summary = wb.active
+    ws_summary.title = "资产概览"
+    
+    # 样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    center_align = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # 标题行
+    headers = ["月份", "记录时间", "总资产", "总负债", "净资产"]
+    for col, header in enumerate(headers, 1):
+        cell = ws_summary.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align
+        cell.border = thin_border
+    
+    # 数据行
+    for row_idx, record in enumerate(records, 2):
+        ws_summary.cell(row=row_idx, column=1, value=record['month']).border = thin_border
+        ws_summary.cell(row=row_idx, column=2, value=record['timestamp'][:19]).border = thin_border
+        ws_summary.cell(row=row_idx, column=3, value=record['total_assets']).border = thin_border
+        ws_summary.cell(row=row_idx, column=4, value=record['total_liabilities']).border = thin_border
+        ws_summary.cell(row=row_idx, column=5, value=record['net_assets']).border = thin_border
+    
+    # 调整列宽
+    ws_summary.column_dimensions['A'].width = 12
+    ws_summary.column_dimensions['B'].width = 22
+    ws_summary.column_dimensions['C'].width = 15
+    ws_summary.column_dimensions['D'].width = 15
+    ws_summary.column_dimensions['E'].width = 15
+    
+    # === Sheet 2: 资产明细 ===
+    ws_detail = wb.create_sheet("资产明细")
+    
+    detail_headers = ["月份", "分类", "名称", "金额"]
+    for col, header in enumerate(detail_headers, 1):
+        cell = ws_detail.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align
+        cell.border = thin_border
+    
+    row_idx = 2
+    for record in records:
+        cursor.execute('''
+            SELECT category, name, amount FROM items WHERE record_id = ?
+        ''', (record['id'],))
+        
+        for item in cursor.fetchall():
+            ws_detail.cell(row=row_idx, column=1, value=record['month']).border = thin_border
+            ws_detail.cell(row=row_idx, column=2, value=item['category']).border = thin_border
+            ws_detail.cell(row=row_idx, column=3, value=item['name']).border = thin_border
+            ws_detail.cell(row=row_idx, column=4, value=item['amount']).border = thin_border
+            row_idx += 1
+    
+    ws_detail.column_dimensions['A'].width = 12
+    ws_detail.column_dimensions['B'].width = 12
+    ws_detail.column_dimensions['C'].width = 20
+    ws_detail.column_dimensions['D'].width = 15
+    
+    conn.close()
+    
+    # 保存到内存
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"资产记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    encoded_filename = urllib.parse.quote(filename)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={encoded_filename}"}
+    )
+
+@app.get("/api/export/expenses")
+def export_expenses(month: Optional[str] = None):
+    """导出支出记录为Excel"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if month:
+        cursor.execute('''
+            SELECT id, date, category, name, amount, note, timestamp
+            FROM expenses WHERE strftime('%Y-%m', date) = ?
+            ORDER BY date DESC, timestamp DESC
+        ''', (month,))
+    else:
+        cursor.execute('''
+            SELECT id, date, category, name, amount, note, timestamp
+            FROM expenses ORDER BY date DESC, timestamp DESC
+        ''')
+    
+    expenses = cursor.fetchall()
+    
+    if not expenses:
+        conn.close()
+        raise HTTPException(status_code=404, detail="暂无支出记录")
+    
+    # 创建Excel
+    wb = Workbook()
+    
+    # === Sheet 1: 支出明细 ===
+    ws_detail = wb.active
+    ws_detail.title = "支出明细"
+    
+    # 样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+    center_align = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # 标题行
+    headers = ["日期", "分类", "名称", "金额", "备注", "记录时间"]
+    for col, header in enumerate(headers, 1):
+        cell = ws_detail.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align
+        cell.border = thin_border
+    
+    # 数据行
+    for row_idx, expense in enumerate(expenses, 2):
+        ws_detail.cell(row=row_idx, column=1, value=expense['date']).border = thin_border
+        ws_detail.cell(row=row_idx, column=2, value=expense['category']).border = thin_border
+        ws_detail.cell(row=row_idx, column=3, value=expense['name']).border = thin_border
+        cell = ws_detail.cell(row=row_idx, column=4, value=expense['amount'])
+        cell.border = thin_border
+        cell.number_format = '¥#,##0.00'
+        ws_detail.cell(row=row_idx, column=5, value=expense['note']).border = thin_border
+        ws_detail.cell(row=row_idx, column=6, value=expense['timestamp'][:19]).border = thin_border
+    
+    # 调整列宽
+    ws_detail.column_dimensions['A'].width = 12
+    ws_detail.column_dimensions['B'].width = 10
+    ws_detail.column_dimensions['C'].width = 15
+    ws_detail.column_dimensions['D'].width = 12
+    ws_detail.column_dimensions['E'].width = 25
+    ws_detail.column_dimensions['F'].width = 20
+    
+    # === Sheet 2: 分类汇总 ===
+    ws_summary = wb.create_sheet("分类汇总")
+    
+    # 按分类汇总
+    if month:
+        cursor.execute('''
+            SELECT category, SUM(amount) as total, COUNT(*) as count
+            FROM expenses WHERE strftime('%Y-%m', date) = ?
+            GROUP BY category ORDER BY total DESC
+        ''', (month,))
+    else:
+        cursor.execute('''
+            SELECT category, SUM(amount) as total, COUNT(*) as count
+            FROM expenses GROUP BY category ORDER BY total DESC
+        ''')
+    
+    summary_headers = ["分类", "总金额", "笔数", "平均每笔"]
+    header_fill_blue = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    
+    for col, header in enumerate(summary_headers, 1):
+        cell = ws_summary.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill_blue
+        cell.alignment = center_align
+        cell.border = thin_border
+    
+    total_amount = 0
+    total_count = 0
+    
+    for row_idx, row in enumerate(cursor.fetchall(), 2):
+        ws_summary.cell(row=row_idx, column=1, value=row['category']).border = thin_border
+        cell = ws_summary.cell(row=row_idx, column=2, value=row['total'])
+        cell.border = thin_border
+        cell.number_format = '¥#,##0.00'
+        ws_summary.cell(row=row_idx, column=3, value=row['count']).border = thin_border
+        avg = row['total'] / row['count'] if row['count'] > 0 else 0
+        cell = ws_summary.cell(row=row_idx, column=4, value=avg)
+        cell.border = thin_border
+        cell.number_format = '¥#,##0.00'
+        
+        total_amount += row['total']
+        total_count += row['count']
+    
+    # 添加合计行
+    total_row = len(expenses) + 2 if month else len(expenses) + 2
+    ws_summary.cell(row=total_row, column=1, value="合计").font = Font(bold=True)
+    ws_summary.cell(row=total_row, column=1).border = thin_border
+    cell = ws_summary.cell(row=total_row, column=2, value=total_amount)
+    cell.font = Font(bold=True)
+    cell.border = thin_border
+    cell.number_format = '¥#,##0.00'
+    ws_summary.cell(row=total_row, column=3, value=total_count).font = Font(bold=True)
+    ws_summary.cell(row=total_row, column=3).border = thin_border
+    
+    ws_summary.column_dimensions['A'].width = 12
+    ws_summary.column_dimensions['B'].width = 15
+    ws_summary.column_dimensions['C'].width = 10
+    ws_summary.column_dimensions['D'].width = 15
+    
+    conn.close()
+    
+    # 保存到内存
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    month_str = f"_{month}" if month else ""
+    filename = f"支出记录{month_str}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    encoded_filename = urllib.parse.quote(filename)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={encoded_filename}"}
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

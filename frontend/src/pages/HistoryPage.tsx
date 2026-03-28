@@ -14,7 +14,7 @@ import {
   Descriptions,
   Collapse,
 } from 'antd'
-import { SearchOutlined, WalletOutlined } from '@ant-design/icons'
+import { SearchOutlined, WalletOutlined, DownloadOutlined } from '@ant-design/icons'
 import { api, Record, AssetItem } from '../api'
 
 const CATEGORIES: Record<string, { label: string; color: string }> = {
@@ -119,6 +119,16 @@ export default function HistoryPage() {
           <Col>
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
               查看记录
+            </Button>
+          </Col>
+          <Col>
+            <Button 
+              icon={<DownloadOutlined />} 
+              onClick={() => {
+                window.open('http://localhost:8000/api/export/assets', '_blank')
+              }}
+            >
+              导出全部资产
             </Button>
           </Col>
         </Row>
