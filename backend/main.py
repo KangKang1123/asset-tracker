@@ -1432,5 +1432,113 @@ def get_upcoming_bills():
     
     return {"upcoming": upcoming, "today": today.strftime('%Y-%m-%d')}
 
+# ==================== 数据备份功能 ====================
+@app.get("/api/backup")
+def export_backup():
+    """导出所有数据备份"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 导出资产记录
+    cursor.execute('SELECT * FROM records')
+    records = [dict(row) for row in cursor.fetchall()]
+    
+    # 导出资产项
+    cursor.execute('SELECT * FROM items')
+    items = [dict(row) for row in cursor.fetchall()]
+    
+    # 导出支出记录
+    cursor.execute('SELECT * FROM expenses')
+    expenses = [dict(row) for row in cursor.fetchall()]
+    
+    # 导出预算
+    cursor.execute('SELECT * FROM budgets')
+    budgets = [dict(row) for row in cursor.fetchall()]
+    
+    # 导出账单
+    cursor.execute('SELECT * FROM bills')
+    bills = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    backup = {
+        "version": "2.0.0",
+        "exported_at": datetime.now().isoformat(),
+        "data": {
+            "records": records,
+            "items": items,
+            "expenses": expenses,
+            "budgets": budgets,
+            "bills": bills,
+        }
+    }
+    
+    return backup
+
+@app.post("/api/backup/import")
+def import_backup(backup: dict):
+    """导入备份数据"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        data = backup.get("data", {})
+        
+        # 导入资产记录
+        for record in data.get("records", []):
+            cursor.execute('''
+                INSERT OR REPLACE INTO records (id, month, timestamp, total_assets, total_liabilities, net_assets)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (record['id'], record['month'], record['timestamp'], 
+                  record['total_assets'], record['total_liabilities'], record['net_assets']))
+        
+        # 导入资产项
+        for item in data.get("items", []):
+            cursor.execute('''
+                INSERT OR REPLACE INTO items (id, record_id, category, name, amount)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (item['id'], item['record_id'], item['category'], item['name'], item['amount']))
+        
+        # 导入支出记录
+        for expense in data.get("expenses", []):
+            cursor.execute('''
+                INSERT OR REPLACE INTO expenses (id, date, category, name, amount, note, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (expense['id'], expense['date'], expense['category'], 
+                  expense['name'], expense['amount'], expense.get('note', ''), expense['timestamp']))
+        
+        # 导入预算
+        for budget in data.get("budgets", []):
+            cursor.execute('''
+                INSERT OR REPLACE INTO budgets (id, month, total_budget, category_budgets, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (budget['id'], budget['month'], budget['total_budget'],
+                  budget['category_budgets'], budget['created_at'], budget['updated_at']))
+        
+        # 导入账单
+        for bill in data.get("bills", []):
+            cursor.execute('''
+                INSERT OR REPLACE INTO bills (id, name, amount, day_of_month, category, note, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (bill['id'], bill['name'], bill['amount'], bill['day_of_month'],
+                  bill['category'], bill.get('note', ''), bill['is_active'], bill['created_at']))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "imported": {
+                "records": len(data.get("records", [])),
+                "items": len(data.get("items", [])),
+                "expenses": len(data.get("expenses", [])),
+                "budgets": len(data.get("budgets", [])),
+                "bills": len(data.get("bills", [])),
+            }
+        }
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
