@@ -9,6 +9,8 @@ import {
   BellOutlined,
   SettingOutlined,
   MenuOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
 import RecordPage from './pages/RecordPage'
@@ -29,6 +31,7 @@ function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => {
@@ -38,6 +41,12 @@ function App() {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  // 切换暗黑模式
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode)
+    document.documentElement.setAttribute('data-theme', !darkMode ? 'dark' : 'light')
+  }
 
   const menuItems = [
     {
@@ -102,7 +111,7 @@ function App() {
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1677ff',
           borderRadius: 8,
@@ -135,7 +144,7 @@ function App() {
           <Header
             style={{
               padding: '0 24px',
-              background: '#fff',
+              background: darkMode ? '#141414' : '#fff',
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               display: 'flex',
               alignItems: 'center',
@@ -145,18 +154,31 @@ function App() {
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
               个人资产管理平台
             </h1>
-            {isMobile && (
-              <MenuOutlined
-                style={{ fontSize: 20, cursor: 'pointer' }}
-                onClick={() => setMobileMenuOpen(true)}
-              />
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {darkMode ? (
+                <SunOutlined
+                  style={{ fontSize: 18, cursor: 'pointer' }}
+                  onClick={toggleDarkMode}
+                />
+              ) : (
+                <MoonOutlined
+                  style={{ fontSize: 18, cursor: 'pointer' }}
+                  onClick={toggleDarkMode}
+                />
+              )}
+              {isMobile && (
+                <MenuOutlined
+                  style={{ fontSize: 20, cursor: 'pointer' }}
+                  onClick={() => setMobileMenuOpen(true)}
+                />
+              )}
+            </div>
           </Header>
           <Content
             style={{
               margin: 24,
               padding: 24,
-              background: '#fff',
+              background: darkMode ? '#141414' : '#fff',
               borderRadius: 12,
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               minHeight: 280,
