@@ -27,8 +27,9 @@ import {
   DownloadOutlined,
   LineChartOutlined,
   SettingOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar } from 'recharts'
 import dayjs from 'dayjs'
 import { api, ExpenseItem, ExpenseCategory, ExpenseSummary } from '../api'
 
@@ -49,6 +50,7 @@ export default function ExpensePage() {
   const [budgetStatus, setBudgetStatus] = useState<any>(null)
   const [budgetModalVisible, setBudgetModalVisible] = useState(false)
   const [budgetForm] = Form.useForm()
+  const [analysis, setAnalysis] = useState<any>(null)
 
   useEffect(() => {
     loadCategories()
@@ -59,6 +61,7 @@ export default function ExpensePage() {
     loadExpenses()
     loadSummary()
     loadBudgetStatus()
+    loadAnalysis()
   }, [selectedMonth])
 
   const loadCategories = async () => {
@@ -106,6 +109,16 @@ export default function ExpensePage() {
       setBudgetStatus(data)
     } catch (err) {
       console.error('加载预算状态失败:', err)
+    }
+  }
+
+  const loadAnalysis = async () => {
+    try {
+      const res = await fetch('/api/expenses/analysis')
+      const data = await res.json()
+      setAnalysis(data)
+    } catch (err) {
+      console.error('加载分析数据失败:', err)
     }
   }
 
@@ -530,6 +543,102 @@ export default function ExpensePage() {
             </Card>
           </Col>
         </Row>
+      )}
+
+      {/* 月度对比分析 */}
+      {analysis && analysis.monthly_comparisons && analysis.monthly_comparisons.length > 1 && (
+        <Card
+          title={
+            <span>
+              <BarChartOutlined style={{ marginRight: 8 }} />
+              月度支出对比
+            </span>
+          }
+          bordered={false}
+          style={{ marginBottom: 24 }}
+        >
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={analysis.monthly_comparisons.slice(-6)}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip formatter={(value: number) => `¥${value.toFixed(0)}`} />
+              <Bar dataKey="total" fill="#1890ff" name="月支出" />
+            </BarChart>
+          </ResponsiveContainer>
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            {analysis.monthly_comparisons.slice(-3).map((item: any) => (
+              <Col span={8} key={item.month}>
+                <Card size="small">
+                  <div style={{ fontWeight: 500 }}>{item.month}</div>
+                  <div style={{ fontSize: 20, margin: '8px 0' }}>
+                    ¥{item.total?.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}
+                  </div>
+                  {item.change !== undefined && (
+                    <Tag color={item.trend === 'up' ? 'red' : item.trend === 'down' ? 'green' : 'default'}>
+                      {item.trend === 'up' ? '↑' : item.trend === 'down' ? '↓' : '→'} 
+                      {Math.abs(item.change_percent).toFixed(1)}%
+                    </Tag>
+                  )}
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Card>
+      )}
+
+      {/* 分类排名 */}
+      {analysis && analysis.category_ranking && analysis.category_ranking.length > 0 && (
+        <Card
+          title="🏆 支出分类排名"
+          bordered={false}
+          style={{ marginBottom: 24 }}
+        >
+          <Table
+            dataSource={analysis.category_ranking.map((item: any, index: number) => ({
+              ...item,
+              key: item.category,
+              rank: index + 1,
+            }))}
+            columns={[
+              {
+                title: '排名',
+                dataIndex: 'rank',
+                key: 'rank',
+                width: 60,
+                render: (r: number) => (
+                  <Tag color={r === 1 ? 'gold' : r === 2 ? 'silver' : r === 3 ? 'orange' : 'default'}>
+                    {r}
+                  </Tag>
+                ),
+              },
+              {
+                title: '分类',
+                dataIndex: 'category',
+                key: 'category',
+              },
+              {
+                title: '总支出',
+                dataIndex: 'total',
+                key: 'total',
+                render: (v: number) => `¥${v.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`,
+              },
+              {
+                title: '笔数',
+                dataIndex: 'count',
+                key: 'count',
+              },
+              {
+                title: '平均',
+                dataIndex: 'avg',
+                key: 'avg',
+                render: (v: number) => `¥${v.toFixed(2)}`,
+              },
+            ]}
+            pagination={false}
+            size="small"
+          />
+        </Card>
       )}
 
       {/* 支出列表 */}

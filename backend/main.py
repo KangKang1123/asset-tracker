@@ -1540,5 +1540,115 @@ def import_backup(backup: dict):
         conn.close()
         return {"success": False, "error": str(e)}
 
+# ==================== 支出统计分析 ====================
+@app.get("/api/expenses/analysis")
+def analyze_expenses():
+    """支出统计分析"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 获取所有支出记录
+    cursor.execute('''
+        SELECT strftime('%Y-%m', date) as month, category, SUM(amount) as total
+        FROM expenses
+        GROUP BY month, category
+        ORDER BY month DESC
+    ''')
+    
+    monthly_data = {}
+    for row in cursor.fetchall():
+        month = row['month']
+        if month not in monthly_data:
+            monthly_data[month] = {'total': 0, 'categories': {}}
+        monthly_data[month]['total'] += row['total']
+        monthly_data[month]['categories'][row['category']] = row['total']
+    
+    months = sorted(monthly_data.keys())
+    
+    # 计算环比变化
+    comparisons = []
+    for i, month in enumerate(months):
+        data = {
+            'month': month,
+            'total': monthly_data[month]['total'],
+            'categories': monthly_data[month]['categories'],
+        }
+        
+        if i > 0:
+            prev_month = months[i - 1]
+            prev_total = monthly_data[prev_month]['total']
+            if prev_total > 0:
+                change = monthly_data[month]['total'] - prev_total
+                change_percent = (change / prev_total) * 100
+                data['change'] = change
+                data['change_percent'] = change_percent
+                data['trend'] = 'up' if change > 0 else 'down' if change < 0 else 'stable'
+            else:
+                data['change'] = 0
+                data['change_percent'] = 0
+                data['trend'] = 'stable'
+        else:
+            data['change'] = 0
+            data['change_percent'] = 0
+            data['trend'] = 'stable'
+        
+        comparisons.append(data)
+    
+    # 分类排名
+    cursor.execute('''
+        SELECT category, SUM(amount) as total, COUNT(*) as count
+        FROM expenses
+        GROUP BY category
+        ORDER BY total DESC
+    ''')
+    
+    category_ranking = []
+    for row in cursor.fetchall():
+        category_ranking.append({
+            'category': row['category'],
+            'total': row['total'],
+            'count': row['count'],
+            'avg': row['total'] / row['count'] if row['count'] > 0 else 0
+        })
+    
+    # 消费习惯分析
+    cursor.execute('''
+        SELECT strftime('%w', date) as weekday, SUM(amount) as total, COUNT(*) as count
+        FROM expenses
+        GROUP BY weekday
+    ''')
+    
+    weekday_spending = {}
+    for row in cursor.fetchall():
+        weekday_spending[row['weekday']] = {
+            'total': row['total'],
+            'count': row['count'],
+            'avg': row['total'] / row['count'] if row['count'] > 0 else 0
+        }
+    
+    # 找出消费最高的星期几
+    max_weekday = max(weekday_spending.items(), key=lambda x: x[1]['total'], default=(None, None))
+    
+    # 平均消费
+    cursor.execute('SELECT AVG(amount) as avg_amount FROM expenses')
+    avg_amount = cursor.fetchone()['avg_amount'] or 0
+    
+    # 最高单笔
+    cursor.execute('SELECT MAX(amount) as max_amount FROM expenses')
+    max_single = cursor.fetchone()['max_amount'] or 0
+    
+    conn.close()
+    
+    return {
+        "monthly_comparisons": list(reversed(comparisons)),
+        "category_ranking": category_ranking,
+        "habits": {
+            "weekday_spending": weekday_spending,
+            "most_spending_weekday": int(max_weekday[0]) if max_weekday[0] else None,
+            "avg_per_transaction": avg_amount,
+            "max_single_transaction": max_single,
+        }
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
