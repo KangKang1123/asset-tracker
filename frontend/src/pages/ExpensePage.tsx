@@ -12,12 +12,10 @@ import {
   Statistic,
   Tag,
   message,
-  Divider,
   DatePicker,
   Empty,
   Popconfirm,
   Space,
-  Progress,
 } from 'antd'
 import {
   PlusOutlined,
@@ -25,7 +23,9 @@ import {
   CalendarOutlined,
   PieChartOutlined,
   DownloadOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import dayjs from 'dayjs'
 import { api, ExpenseItem, ExpenseCategory, ExpenseSummary } from '../api'
 
@@ -43,7 +43,6 @@ export default function ExpensePage() {
   const [summary, setSummary] = useState<ExpenseSummary | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'))
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
-  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats'>('add')
 
   useEffect(() => {
     loadCategories()
@@ -312,44 +311,66 @@ export default function ExpensePage() {
 
       {/* 分类统计 */}
       {summary && summary.by_category.length > 0 && (
-        <Card
-          title={
-            <span>
-              <PieChartOutlined style={{ marginRight: 8 }} />
-              分类支出统计
-            </span>
-          }
-          bordered={false}
-          style={{ marginBottom: 24 }}
-        >
-          <Row gutter={[16, 16]}>
-            {summary.by_category.map((item, index) => {
-              const percent = (item.total / summary.total) * 100
-              return (
-                <Col span={8} key={item.category}>
-                  <Card size="small">
-                    <div style={{ marginBottom: 8 }}>
-                      <Tag color={COLORS[index % COLORS.length]}>
-                        {getCategoryLabel(item.category)}
-                      </Tag>
-                      <span style={{ float: 'right', color: '#cf1322', fontWeight: 600 }}>
-                        ¥{item.total.toFixed(2)}
-                      </span>
-                    </div>
-                    <Progress
-                      percent={percent}
-                      showInfo={false}
-                      strokeColor={COLORS[index % COLORS.length]}
-                    />
-                    <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                      {item.count}笔 · {percent.toFixed(1)}%
-                    </div>
-                  </Card>
-                </Col>
-              )
-            })}
-          </Row>
-        </Card>
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          <Col span={12}>
+            <Card
+              title={
+                <span>
+                  <PieChartOutlined style={{ marginRight: 8 }} />
+                  分类占比
+                </span>
+              }
+              bordered={false}
+            >
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={summary.by_category.map((item, index) => ({
+                      name: getCategoryLabel(item.category),
+                      value: item.total,
+                      color: COLORS[index % COLORS.length],
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={100}
+                    dataKey="value"
+                  >
+                    {summary.by_category.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `¥${value.toFixed(2)}`} />
+                </PieChart>
+              </ResponsiveContainer>
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card
+              title={
+                <span>
+                  <LineChartOutlined style={{ marginRight: 8 }} />
+                  每日支出
+                </span>
+              }
+              bordered={false}
+            >
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={summary.by_date.slice(-15).map((item) => ({
+                  date: item.date.slice(5),
+                  amount: item.total,
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip formatter={(value: number) => `¥${value.toFixed(2)}`} />
+                  <Line type="monotone" dataKey="amount" stroke="#1890ff" strokeWidth={2} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+          </Col>
+        </Row>
       )}
 
       {/* 支出列表 */}
