@@ -6,6 +6,7 @@ import {
   LineChartOutlined,
   HeartOutlined,
   ShoppingCartOutlined,
+  BellOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
 import RecordPage from './pages/RecordPage'
@@ -13,11 +14,12 @@ import HistoryPage from './pages/HistoryPage'
 import TrendPage from './pages/TrendPage'
 import HealthPage from './pages/HealthPage'
 import ExpensePage from './pages/ExpensePage'
+import BillsPage from './pages/BillsPage'
 import './App.css'
 
 const { Header, Content, Sider } = Layout
 
-type PageKey = 'record' | 'history' | 'trend' | 'health' | 'expense'
+type PageKey = 'record' | 'history' | 'trend' | 'health' | 'expense' | 'bills'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('record')
@@ -49,6 +51,11 @@ function App() {
       icon: <ShoppingCartOutlined />,
       label: '支出记录',
     },
+    {
+      key: 'bills',
+      icon: <BellOutlined />,
+      label: '账单提醒',
+    },
   ]
 
   const renderPage = () => {
@@ -63,6 +70,8 @@ function App() {
         return <HealthPage />
       case 'expense':
         return <ExpensePage />
+      case 'bills':
+        return <BillsPage />
       default:
         return <RecordPage />
     }

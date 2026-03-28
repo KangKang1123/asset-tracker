@@ -101,6 +101,20 @@ def ensure_db():
         )
     ''')
     
+    # 账单提醒表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            day_of_month INTEGER NOT NULL,
+            category TEXT,
+            note TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -1279,6 +1293,144 @@ def get_budget_status(month: str):
         "percent": (total_spent / total_budget * 100) if total_budget > 0 else 0,
         "category_status": category_status
     }
+
+# ==================== 账单提醒功能 ====================
+class BillCreate(BaseModel):
+    """账单创建"""
+    name: str
+    amount: float
+    day_of_month: int  # 每月几号
+    category: Optional[str] = "其他"
+    note: Optional[str] = ""
+
+class BillResponse(BaseModel):
+    """账单响应"""
+    id: int
+    name: str
+    amount: float
+    day_of_month: int
+    category: str
+    note: str
+    is_active: int
+    created_at: str
+
+@app.get("/api/bills")
+def get_bills():
+    """获取所有账单"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, name, amount, day_of_month, category, note, is_active, created_at
+        FROM bills ORDER BY day_of_month ASC
+    ''')
+    
+    bills = []
+    for row in cursor.fetchall():
+        bills.append(dict(row))
+    
+    conn.close()
+    return {"bills": bills}
+
+@app.post("/api/bills")
+def create_bill(bill: BillCreate):
+    """创建账单"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    now = datetime.now().isoformat()
+    
+    cursor.execute('''
+        INSERT INTO bills (name, amount, day_of_month, category, note, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
+    ''', (bill.name, bill.amount, bill.day_of_month, bill.category, bill.note, now))
+    
+    conn.commit()
+    bill_id = cursor.lastrowid
+    conn.close()
+    
+    return {"success": True, "id": bill_id}
+
+@app.delete("/api/bills/{bill_id}")
+def delete_bill(bill_id: int):
+    """删除账单"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM bills WHERE id = ?', (bill_id,))
+    conn.commit()
+    conn.close()
+    
+    return {"success": True}
+
+@app.patch("/api/bills/{bill_id}")
+def toggle_bill(bill_id: int):
+    """切换账单激活状态"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT is_active FROM bills WHERE id = ?', (bill_id,))
+    row = cursor.fetchone()
+    
+    if row:
+        new_status = 0 if row['is_active'] == 1 else 1
+        cursor.execute('UPDATE bills SET is_active = ? WHERE id = ?', (new_status, bill_id))
+        conn.commit()
+    
+    conn.close()
+    return {"success": True}
+
+@app.get("/api/bills/upcoming")
+def get_upcoming_bills():
+    """获取即将到期的账单"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    today = datetime.now()
+    current_day = today.day
+    current_month = today.month
+    current_year = today.year
+    
+    cursor.execute('''
+        SELECT id, name, amount, day_of_month, category, note, is_active
+        FROM bills WHERE is_active = 1
+        ORDER BY day_of_month ASC
+    ''')
+    
+    upcoming = []
+    for row in cursor.fetchall():
+        day = row['day_of_month']
+        
+        # 计算到期日期
+        if day >= current_day:
+            due_date = today.replace(day=day)
+        else:
+            # 下个月
+            if current_month == 12:
+                due_date = today.replace(year=current_year + 1, month=1, day=day)
+            else:
+                due_date = today.replace(month=current_month + 1, day=day)
+        
+        days_until = (due_date - today).days
+        
+        upcoming.append({
+            "id": row['id'],
+            "name": row['name'],
+            "amount": row['amount'],
+            "day_of_month": day,
+            "category": row['category'],
+            "note": row['note'],
+            "due_date": due_date.strftime('%Y-%m-%d'),
+            "days_until": days_until,
+            "is_overdue": days_until < 0
+        })
+    
+    conn.close()
+    
+    # 按剩余天数排序
+    upcoming.sort(key=lambda x: x['days_until'])
+    
+    return {"upcoming": upcoming, "today": today.strftime('%Y-%m-%d')}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
